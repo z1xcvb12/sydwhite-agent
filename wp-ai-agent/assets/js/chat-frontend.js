@@ -1,3 +1,5 @@
+import { sendChatRequest } from './chat-transport.js';
+
 (function(){
     const config = window.WPAI_CONFIG || {};
     const selectors = config.selectors || {};
@@ -105,55 +107,50 @@
             scrollBottom();
         }
 
-        function sendMsg(msg){
+        async function sendMsg(msg){
             const typingEl = showTyping();
-            const data = new FormData();
-            data.append('action', 'ai_agent_chat');
-            data.append('visitor', visitor);
-            data.append('message', msg);
-            data.append('conversation', JSON.stringify(convo));
-
-            fetch(config.ajax, {method:'POST', body:data}).then(function(res){
-                const ct = res.headers.get('Content-Type') || '';
-                if(ct.indexOf('text/event-stream') !== -1 && res.body){
-                    const reader = res.body.getReader();
-                    const decoder = new TextDecoder();
-                    let out = '';
-                    function read(){
-                        reader.read().then(function(r){
-                            if(r.done){
-                                convo.push({role:'user',content:msg});
-                                convo.push({role:'assistant',content:out});
-                                finishTyping(typingEl, out);
-                                return;
-                            }
-                            const str = decoder.decode(r.value);
-                            str.split('\n').forEach(function(line){
-                                if(line.startsWith('data:')){
-                                    const payload = line.replace('data:','').trim();
-                                    if(payload === '[DONE]'){ return; }
-                                    try{
-                                        const j = JSON.parse(payload);
-                                        const d = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
-                                        if(d){ out += d; }
-                                    }catch(e){}
-                                }
-                            });
+            let textNode = null;
+            send.disabled = true;
+            ta.disabled = true;
+            try {
+                await sendChatRequest({
+                    url: config.ajax + '?action=ai_agent_chat',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: {
+                        visitor,
+                        message: msg,
+                        conversation: convo
+                    },
+                    onToken(token){
+                        if(!textNode){
                             typingEl.classList.remove('typing');
-                            typingEl.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> '+out;
-                            scrollBottom();
-                            read();
-                        });
-                    }
-                    read();
-                } else {
-                    res.text().then(function(out){
+                            typingEl.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> <span class="ai-agent-text"></span>';
+                            textNode = typingEl.querySelector('.ai-agent-text');
+                        }
+                        textNode.textContent += token;
+                        scrollBottom();
+                    },
+                    onDone(full){
+                        if(textNode){
+                            finishTyping(typingEl, textNode.textContent);
+                        } else {
+                            typingEl.remove();
+                        }
                         convo.push({role:'user',content:msg});
-                        convo.push({role:'assistant',content:out});
-                        finishTyping(typingEl, out);
-                    });
-                }
-            }).catch(function(){ typingEl.remove(); });
+                        convo.push({role:'assistant',content:full});
+                    }
+                });
+            } catch (err) {
+                typingEl.remove();
+                const m = document.createElement('div');
+                m.className = 'ai-agent-msg bot';
+                m.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> '+(err.message || 'Error');
+                list.appendChild(m);
+                scrollBottom();
+            } finally {
+                send.disabled = false;
+                ta.disabled = false;
+            }
         }
 
         send.addEventListener('click', function(){
