@@ -9,3 +9,12 @@
 .ai-agent-msg.bot { background:#fff; align-self:flex-start; }
 .ai-agent-msg { padding:6px 8px; margin:4px; border-radius:6px; max-width:80%; }
 @media (max-width:767px){ .ai-agent-window{ width:100%; height:100vh; border-radius:0; right:0; bottom:0; }}
+
+.wpai-typing { display:flex; align-items:center; gap:8px; padding:8px 12px; opacity:0; height:0; overflow:hidden; transition:opacity .2s ease,height .2s ease; }
+.wpai-typing.active { opacity:1; height:auto; }
+.wpai-typing__label { font-size:0.9rem; }
+.wpai-dots { display:inline-flex; gap:4px; }
+.wpai-dot { opacity:0.2; animation: wpai-blink 1s infinite; }
+.wpai-dot:nth-child(2){ animation-delay:.2s; }
+.wpai-dot:nth-child(3){ animation-delay:.4s; }
+@keyframes wpai-blink{ 0%,20%{opacity:.2} 50%{opacity:1} 100%{opacity:.2} }

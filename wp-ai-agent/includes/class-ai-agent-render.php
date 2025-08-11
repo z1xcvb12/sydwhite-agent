@@ -21,6 +21,11 @@ class Ai_Agent_Render {
             'sound'     => ! empty( $settings['sound'] ),
             'debug'     => ! empty( $settings['debug'] ),
         ] );
+        wp_localize_script(
+            'wp-ai-agent',
+            'wpaiAgentNames',
+            [ 'Jack Wilson', 'Olivia Nguyen', "Liam O'Connor", 'Chloe Smith', 'Noah Patel' ]
+        );
         wp_enqueue_style( 'wp-ai-agent' );
         wp_enqueue_script( 'wp-ai-agent' );
     }
