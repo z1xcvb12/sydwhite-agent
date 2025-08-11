@@ -92,68 +92,53 @@
             return m;
         }
 
-        function finishTyping(el, text){
-            try{
-                const q = JSON.parse(text);
-                if(q && q.items){
-                    renderQuote(q);
-                    text = '';
-                }
-            }catch(e){}
-            el.classList.remove('typing');
-            el.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> '+text;
-            scrollBottom();
-        }
-
-        function sendMsg(msg){
+        async function sendMsg(msg){
             const typingEl = showTyping();
-            const data = new FormData();
-            data.append('action', 'ai_agent_chat');
-            data.append('visitor', visitor);
-            data.append('message', msg);
-            data.append('conversation', JSON.stringify(convo));
-
-            fetch(config.ajax, {method:'POST', body:data}).then(function(res){
-                const ct = res.headers.get('Content-Type') || '';
-                if(ct.indexOf('text/event-stream') !== -1 && res.body){
-                    const reader = res.body.getReader();
-                    const decoder = new TextDecoder();
-                    let out = '';
-                    function read(){
-                        reader.read().then(function(r){
-                            if(r.done){
-                                convo.push({role:'user',content:msg});
-                                convo.push({role:'assistant',content:out});
-                                finishTyping(typingEl, out);
-                                return;
-                            }
-                            const str = decoder.decode(r.value);
-                            str.split('\n').forEach(function(line){
-                                if(line.startsWith('data:')){
-                                    const payload = line.replace('data:','').trim();
-                                    if(payload === '[DONE]'){ return; }
-                                    try{
-                                        const j = JSON.parse(payload);
-                                        const d = j.choices && j.choices[0] && j.choices[0].delta && j.choices[0].delta.content;
-                                        if(d){ out += d; }
-                                    }catch(e){}
-                                }
-                            });
+            ta.disabled = true;
+            send.disabled = true;
+            let textNode;
+            try{
+                const full = await window.WPAI.sendChatRequest({
+                    url: config.ajax + '?action=ai_agent_chat',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: { visitor: visitor, message: msg, conversation: convo },
+                    onToken: function(tok){
+                        if(!textNode){
                             typingEl.classList.remove('typing');
-                            typingEl.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> '+out;
-                            scrollBottom();
-                            read();
-                        });
+                            typingEl.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> ';
+                            textNode = document.createTextNode(tok);
+                            typingEl.appendChild(textNode);
+                        } else {
+                            textNode.textContent += tok;
+                        }
+                        scrollBottom();
                     }
-                    read();
-                } else {
-                    res.text().then(function(out){
-                        convo.push({role:'user',content:msg});
-                        convo.push({role:'assistant',content:out});
-                        finishTyping(typingEl, out);
-                    });
+                });
+                convo.push({role:'user',content:msg});
+                convo.push({role:'assistant',content:full});
+                if(!textNode){
+                    typingEl.classList.remove('typing');
+                    typingEl.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> '+full;
                 }
-            }).catch(function(){ typingEl.remove(); });
+                try{
+                    const q = JSON.parse(full);
+                    if(q && q.items){
+                        renderQuote(q);
+                        if(textNode){ textNode.textContent = ''; }
+                    }
+                }catch(e){}
+            } catch(e){
+                typingEl.remove();
+                const err = document.createElement('div');
+                err.className = 'ai-agent-msg bot';
+                err.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> Error';
+                list.appendChild(err);
+                scrollBottom();
+            } finally {
+                ta.disabled = false;
+                send.disabled = false;
+                scrollBottom();
+            }
         }
 
         send.addEventListener('click', function(){

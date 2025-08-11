@@ -20,9 +20,17 @@ class Ai_Agent_AJAX {
 
     public function chat() {
         nocache_headers();
-        $visitor = sanitize_text_field( $_POST['visitor'] ?? '' );
-        $message = sanitize_textarea_field( $_POST['message'] ?? '' );
-        $conversation = isset( $_POST['conversation'] ) ? json_decode( wp_unslash( $_POST['conversation'] ), true ) : [];
+        $input = file_get_contents( 'php://input' );
+        $json  = json_decode( $input, true );
+        if ( is_array( $json ) ) {
+            $visitor      = sanitize_text_field( $json['visitor'] ?? '' );
+            $message      = sanitize_textarea_field( $json['message'] ?? '' );
+            $conversation = isset( $json['conversation'] ) ? (array) $json['conversation'] : [];
+        } else {
+            $visitor      = sanitize_text_field( $_POST['visitor'] ?? '' );
+            $message      = sanitize_textarea_field( $_POST['message'] ?? '' );
+            $conversation = isset( $_POST['conversation'] ) ? json_decode( wp_unslash( $_POST['conversation'] ), true ) : [];
+        }
         $this->rate_limit( $visitor );
 
         $settings = wp_ai_agent_get_settings();
