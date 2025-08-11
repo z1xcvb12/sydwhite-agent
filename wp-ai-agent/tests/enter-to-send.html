@@ -1,0 +1,32 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Enter-to-Send Test</title>
+<div class="wpai-chatbox">
+  <div class="wpai-composer">
+    <textarea id="t" rows="1" enterkeyhint="send"></textarea>
+    <button class="wpai-btn-send" id="s">Send</button>
+  </div>
+  <pre id="log"></pre>
+</div>
+<script>
+  window.WPAIAgent = { enterToSend: true };
+  const t = document.getElementById('t'), s = document.getElementById('s'), log = document.getElementById('log');
+  let sent = 0, composing = false;
+  s.addEventListener('click', ()=>{ sent++; log.textContent += 'SEND '+sent+'\n'; });
+  t.addEventListener('compositionstart', ()=> composing = true);
+  t.addEventListener('compositionend', ()=> composing = false);
+  t.addEventListener('keydown', function(e){
+    if (e.key !== 'Enter') return;
+    if (e.isComposing || composing) return;
+    if (e.shiftKey) return;
+    if (!window.WPAIAgent.enterToSend) return;
+    e.preventDefault(); s.click();
+  });
+  // Simulate
+  t.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'}));         // send 1
+  t.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter',shiftKey:1})); // no send
+  t.dispatchEvent(new CompositionEvent('compositionstart'));
+  t.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'}));            // blocked
+  t.dispatchEvent(new CompositionEvent('compositionend'));
+  t.dispatchEvent(new KeyboardEvent('keydown',{key:'Enter'}));         // send 2
+</script>
