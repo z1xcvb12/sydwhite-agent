@@ -8,7 +8,7 @@ Stable tag: 1.0.0
 License: MIT
 License URI: https://opensource.org/licenses/MIT
 
-WhatsApp-style AI chat with quote generation.
+WhatsApp-style AI chat popup with quote generation and Elementor/shortcode support.
 
 == Description ==
 AI Agent adds a floating WhatsApp-like chat widget that talks to OpenAI or Probex and can return structured quote JSON.
