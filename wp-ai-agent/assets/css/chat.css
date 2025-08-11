@@ -1,4 +1,4 @@
-#wp-ai-agent-root, #wp-ai-agent-admin { position: fixed; bottom: 20px; right: 20px; z-index: 99999; }
+[data-wpai-chat-root] { position: fixed; bottom: 20px; right: 20px; z-index: 99999; }
 .ai-agent-button { background:#25D366;color:#fff;border-radius:50%;width:56px;height:56px;display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 2px 6px rgba(0,0,0,0.2); }
 .ai-agent-window { display:none; flex-direction:column; width:400px; height:600px; background:#fff; border:1px solid #ccc; border-radius:8px; overflow:hidden; }
 .ai-agent-header { background:#075e54; color:#fff; padding:10px; }
@@ -9,3 +9,16 @@
 .ai-agent-msg.bot { background:#fff; align-self:flex-start; }
 .ai-agent-msg { padding:6px 8px; margin:4px; border-radius:6px; max-width:80%; }
 @media (max-width:767px){ .ai-agent-window{ width:100%; height:100vh; border-radius:0; right:0; bottom:0; }}
+
+.ai-agent-msg.typing { opacity:0.8; }
+.ai-agent-msg.typing .typing-dots { display:inline-block; margin-left:4px; }
+.ai-agent-msg.typing .typing-dots span {
+    display:inline-block;
+    width:4px; height:4px; margin:0 1px;
+    background:#666; border-radius:50%;
+    animation:wpai-blink 1.4s infinite both;
+}
+.ai-agent-msg.typing .typing-dots span:nth-child(2){ animation-delay:.2s; }
+.ai-agent-msg.typing .typing-dots span:nth-child(3){ animation-delay:.4s; }
+@keyframes wpai-blink { 0%,80%,100%{opacity:0;}40%{opacity:1;} }
+.ai-agent-name{font-weight:600;}
