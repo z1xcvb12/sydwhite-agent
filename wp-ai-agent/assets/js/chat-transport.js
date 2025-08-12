@@ -7,37 +7,28 @@
       const res = await fetch(url, { method: 'POST', headers, body: JSON.stringify(body), signal: ctrl.signal });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const ctype = (res.headers.get('content-type') || '').toLowerCase();
-      if (streamPreferred && (res.body && (ctype.includes('text/event-stream') || ctype.includes('application/json')))) {
+      if (streamPreferred && res.body && (ctype.includes('text/event-stream') || ctype.includes('application/json'))) {
         const reader = res.body.getReader();
         const decoder = new TextDecoder();
-        let done, value, buf = '';
-        while (true) {
-          ({done, value} = await reader.read());
+        let buf = '';
+        let finished = false;
+        while (!finished) {
+          const {done, value} = await reader.read();
           if (done) break;
           buf += decoder.decode(value, {stream:true});
-          let idx;
-          while ((idx = buf.indexOf('\n')) >= 0) {
-            const line = buf.slice(0, idx).trim();
-            buf = buf.slice(idx+1);
-            if (!line) continue;
-            const dataLine = line.startsWith('data:') ? line.slice(5).trim() : line;
-            if (dataLine === '[DONE]') { onDone && onDone(full); return full; }
+          const parts = buf.split('\n');
+          buf = parts.pop();
+          for (const line of parts) {
+            if (!line.startsWith('data:')) continue;
+            const payload = line.slice(5).trim();
+            if (payload === '[DONE]') { finished = true; break; }
             try {
-              const obj = JSON.parse(dataLine);
-              const choice = obj.choices && obj.choices[0];
-              const delta = choice && (choice.delta?.content ?? choice.message?.content ?? '');
-              if (delta) {
-                full += delta;
-                onToken && onToken(delta);
-              }
+              const j = JSON.parse(payload);
+              const delta = j.choices?.[0]?.delta?.content || '';
+              if (delta) { full += delta; onToken && onToken(delta); }
             } catch {}
           }
         }
-        try {
-          const obj = JSON.parse(buf);
-          const content = obj?.choices?.[0]?.message?.content ?? '';
-          if (content) { full += content; onToken && onToken(content); }
-        } catch {}
         onDone && onDone(full);
         return full;
       }

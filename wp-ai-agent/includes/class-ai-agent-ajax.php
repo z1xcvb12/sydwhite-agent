@@ -14,7 +14,7 @@ class Ai_Agent_AJAX {
     }
 
     protected function rate_limit( $visitor_id ) {
-        $key = 'ai_agent_last_' . $visitor_id;
+        $key  = 'ai_agent_last_' . $visitor_id;
         $last = get_transient( $key );
         if ( $last ) {
             wp_send_json_error( [ 'error' => 'rate_limited' ], 429 );
@@ -41,7 +41,7 @@ class Ai_Agent_AJAX {
         $found    = Ai_Agent_DB::get_active_by_vid_or_ip( $visitor, $ip_hash );
         $chat_id  = null;
         if ( $found ) {
-            $chat_id     = (int) $found->id;
+            $chat_id      = (int) $found->id;
             $conversation = json_decode( (string) $found->conversation, true ) ?: [];
         }
         $handbook = Ai_Agent_Handbooks::get_prompt();
@@ -55,13 +55,22 @@ class Ai_Agent_AJAX {
         }
         $messages[] = [ 'role' => 'user', 'content' => $message ];
 
+        // Persist the user message before streaming so it is not lost.
+        $conversation[] = [ 'role' => 'user', 'content' => $message, 'ts' => time() ];
+        $chat_id        = Ai_Agent_DB::save_chat( $visitor, $ip_hash, $conversation, $chat_id );
+
         header( 'Content-Type: text/event-stream' );
         header( 'Cache-Control: no-cache' );
         header( 'X-Accel-Buffering: no' );
+        ignore_user_abort( true );
+        @set_time_limit( 0 );
 
-        $response      = $this->stream_api( $settings, $messages );
-        $conversation[] = [ 'role' => 'user', 'content' => $message, 'ts' => time() ];
-        $conversation[] = [ 'role' => 'assistant', 'content' => $response, 'ts' => time() ];
+        $assistant_buffer = '';
+        $this->stream_api( $settings, $messages, $assistant_buffer );
+
+        if ( '' !== $assistant_buffer ) {
+            $conversation[] = [ 'role' => 'assistant', 'content' => $assistant_buffer, 'ts' => time() ];
+        }
         Ai_Agent_DB::save_chat( $visitor, $ip_hash, $conversation, $chat_id );
         wp_die();
     }
@@ -97,11 +106,11 @@ class Ai_Agent_AJAX {
         wp_send_json_success();
     }
 
-    protected function stream_api( $settings, $messages ) {
-        $alt = wp_ai_agent_decrypt( $settings['alt_key'] );
-        $open = wp_ai_agent_decrypt( $settings['openai_key'] );
+    protected function stream_api( $settings, $messages, &$assistant_buffer ) {
+        $alt   = wp_ai_agent_decrypt( $settings['alt_key'] );
+        $open  = wp_ai_agent_decrypt( $settings['openai_key'] );
         $model = $settings['model'] ?: 'gpt-4o-mini';
-        $url = $alt ? 'https://api.probex.top/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions';
+        $url   = $alt ? 'https://api.probex.top/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions';
         if ( ! empty( $settings['base_url'] ) && ! $alt ) {
             $url = $settings['base_url'];
         }
@@ -109,39 +118,44 @@ class Ai_Agent_AJAX {
             'Content-Type: application/json',
             'Authorization: Bearer ' . ( $alt ? $alt : $open ),
         ];
-        $body = [
-            'model'    => $alt ? $model : $model,
-            'messages' => $messages,
-            'stream'   => true,
+        $max_tokens = isset( $settings['max_tokens'] ) ? (int) $settings['max_tokens'] : 0;
+        $body       = [
+            'model'       => $alt ? $model : $model,
+            'messages'    => $messages,
+            'stream'      => true,
+            'max_tokens'  => $max_tokens < 800 ? 800 : $max_tokens,
+            'temperature' => isset( $settings['temperature'] ) ? (float) $settings['temperature'] : 0.7,
         ];
         $ch = curl_init( $url );
         curl_setopt( $ch, CURLOPT_HTTPHEADER, $headers );
         curl_setopt( $ch, CURLOPT_POST, true );
         curl_setopt( $ch, CURLOPT_POSTFIELDS, wp_json_encode( $body ) );
         curl_setopt( $ch, CURLOPT_RETURNTRANSFER, false );
-        $buffer = '';
-        curl_setopt( $ch, CURLOPT_WRITEFUNCTION, function( $ch, $data ) use ( &$buffer ) {
-            $buffer .= $data;
+        $sse_buf = '';
+        curl_setopt( $ch, CURLOPT_WRITEFUNCTION, function( $ch, $data ) use ( &$sse_buf, &$assistant_buffer ) {
             echo $data;
             @ob_flush();
             flush();
+            $sse_buf .= $data;
+            while ( false !== ( $pos = strpos( $sse_buf, "\n" ) ) ) {
+                $line    = trim( substr( $sse_buf, 0, $pos ) );
+                $sse_buf = substr( $sse_buf, $pos + 1 );
+                if ( '' === $line || 0 !== strpos( $line, 'data:' ) ) {
+                    continue;
+                }
+                $payload = trim( substr( $line, 5 ) );
+                if ( '[DONE]' === $payload ) {
+                    return strlen( $data );
+                }
+                $json = json_decode( $payload, true );
+                if ( isset( $json['choices'][0]['delta']['content'] ) ) {
+                    $assistant_buffer .= $json['choices'][0]['delta']['content'];
+                }
+            }
             return strlen( $data );
         } );
         curl_exec( $ch );
         curl_close( $ch );
-        $text = '';
-        foreach ( explode( "\\n", $buffer ) as $line ) {
-            if ( 0 === strpos( $line, 'data:' ) ) {
-                $payload = trim( substr( $line, 5 ) );
-                if ( '[DONE]' === $payload ) {
-                    break;
-                }
-                $json = json_decode( $payload, true );
-                if ( isset( $json['choices'][0]['delta']['content'] ) ) {
-                    $text .= $json['choices'][0]['delta']['content'];
-                }
-            }
-        }
-        return $text;
     }
 }
+

@@ -59,14 +59,13 @@
         const list = win.querySelector(listSelector);
         let convo = [];
 
-        function saveLocal(){
+        function persistConversation(){
             const arr = [];
             list.querySelectorAll('.ai-agent-msg').forEach(el => {
-                let text = el.textContent;
-                const prefix = agentName + ':';
-                if((el.dataset.role||'') === 'assistant' && text.startsWith(prefix)){
-                    text = text.slice(prefix.length).trim();
-                }
+                if(el.classList.contains('typing')){ return; }
+                const msgEl = el.querySelector('.wpai-msg');
+                const text = msgEl ? msgEl.textContent.trim() : '';
+                if(!text){ return; }
                 arr.push({
                     role: el.dataset.role || (el.classList.contains('user') ? 'user' : 'assistant'),
                     content: text,
@@ -79,15 +78,18 @@
 
         function scrollBottom(){ list.scrollTop = list.scrollHeight; }
 
-        function addUser(text){
+        function addUser(text, ts){
             const m = document.createElement('div');
             m.className = 'ai-agent-msg user';
             m.dataset.role = 'user';
-            m.dataset.ts = Date.now();
-            m.textContent = text;
+            m.dataset.ts = ts || Date.now();
+            const span = document.createElement('span');
+            span.className = 'wpai-msg';
+            span.textContent = text;
+            m.appendChild(span);
             list.appendChild(m);
             scrollBottom();
-            saveLocal();
+            persistConversation();
         }
 
         function renderQuote(q){
@@ -101,31 +103,42 @@
         function showTyping(){
             const m = document.createElement('div');
             m.className = 'ai-agent-msg bot typing';
+            m.dataset.role = 'assistant';
+            m.dataset.ts = Date.now();
             m.innerHTML = '<span class="ai-agent-name">'+agentName+'</span> is typing <span class="typing-dots"><span></span><span></span><span></span></span>';
             list.appendChild(m);
             scrollBottom();
             return m;
         }
 
-        function addBot(text, system){
+        function addBot(text, system, ts){
             const m = document.createElement('div');
             m.className = 'ai-agent-msg bot' + (system ? ' system' : '');
             m.dataset.role = 'assistant';
-            m.dataset.ts = Date.now();
-            m.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> ' + text;
+            m.dataset.ts = ts || Date.now();
+            const name = document.createElement('span');
+            name.className = 'ai-agent-name';
+            name.textContent = agentName + ':';
+            const msg = document.createElement('span');
+            msg.className = 'wpai-msg';
+            msg.textContent = text;
+            m.appendChild(name);
+            m.appendChild(document.createTextNode(' '));
+            m.appendChild(msg);
             list.appendChild(m);
             scrollBottom();
-            saveLocal();
+            persistConversation();
         }
 
         function renderConversation(conv){
             conv.forEach(function(m){
+                const text = m.content || m.message || m.text || '';
                 if(m.role === 'user'){
-                    addUser(m.content);
+                    addUser(text, m.ts);
                 } else if(m.system){
-                    addBot(m.content, true);
+                    addBot(text, true, m.ts);
                 } else {
-                    addBot(m.content);
+                    addBot(text, false, m.ts);
                 }
             });
         }
@@ -135,6 +148,7 @@
             if(cached){
                 convo = JSON.parse(cached) || [];
                 renderConversation(convo);
+                persistConversation();
             }
         }catch(e){}
 
@@ -187,7 +201,7 @@
                     convo = data.conversation;
                     list.innerHTML = '';
                     renderConversation(convo);
-                    saveLocal();
+                    persistConversation();
                 }
                 if(data.status === 'active'){
                     startExpiry();
@@ -212,9 +226,8 @@
                     onToken: function(tok){
                         if(!textNode){
                             typingEl.classList.remove('typing');
-                            typingEl.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> ';
-                            textNode = document.createTextNode(tok);
-                            typingEl.appendChild(textNode);
+                            typingEl.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> <span class="wpai-msg"></span>';
+                            textNode = typingEl.querySelector('.wpai-msg').appendChild(document.createTextNode(tok));
                         } else {
                             textNode.textContent += tok;
                         }
@@ -226,7 +239,7 @@
                 convo.push({role:'assistant',content:full});
                 if(!textNode){
                     typingEl.classList.remove('typing');
-                    typingEl.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> '+full;
+                    typingEl.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> <span class="wpai-msg">'+full+'</span>';
                 }
                 try{
                     const q = JSON.parse(full);
@@ -235,7 +248,7 @@
                         if(textNode){ textNode.textContent = ''; }
                     }
                 }catch(e){}
-                saveLocal();
+                persistConversation();
             } catch(e){
                 typingEl.remove();
                 const err = document.createElement('div');

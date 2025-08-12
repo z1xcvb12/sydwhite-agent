@@ -70,7 +70,12 @@
         function addUser(text){
             const m = document.createElement('div');
             m.className = 'ai-agent-msg user';
-            m.textContent = text;
+            m.dataset.role = 'user';
+            m.dataset.ts = Date.now();
+            const span = document.createElement('span');
+            span.className = 'wpai-msg';
+            span.textContent = text;
+            m.appendChild(span);
             list.appendChild(m);
             scrollBottom();
         }
@@ -86,6 +91,8 @@
         function showTyping(){
             const m = document.createElement('div');
             m.className = 'ai-agent-msg bot typing';
+            m.dataset.role = 'assistant';
+            m.dataset.ts = Date.now();
             m.innerHTML = '<span class="ai-agent-name">'+agentName+'</span> is typing <span class="typing-dots"><span></span><span></span><span></span></span>';
             list.appendChild(m);
             scrollBottom();
@@ -105,9 +112,8 @@
                     onToken: function(tok){
                         if(!textNode){
                             typingEl.classList.remove('typing');
-                            typingEl.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> ';
-                            textNode = document.createTextNode(tok);
-                            typingEl.appendChild(textNode);
+                            typingEl.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> <span class="wpai-msg"></span>';
+                            textNode = typingEl.querySelector('.wpai-msg').appendChild(document.createTextNode(tok));
                         } else {
                             textNode.textContent += tok;
                         }
@@ -118,7 +124,7 @@
                 convo.push({role:'assistant',content:full});
                 if(!textNode){
                     typingEl.classList.remove('typing');
-                    typingEl.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> '+full;
+                    typingEl.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> <span class="wpai-msg">'+full+'</span>';
                 }
                 try{
                     const q = JSON.parse(full);
