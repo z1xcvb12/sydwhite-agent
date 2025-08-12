@@ -77,6 +77,11 @@ class Ai_Agent_DB {
         return (object) [ 'row' => $row, 'expired' => $expired ];
     }
 
+    public static function touch_activity( $id ) {
+        global $wpdb;
+        $wpdb->update( self::table_name(), [ 'last_activity' => current_time( 'mysql', true ) ], [ 'id' => (int) $id ], [ '%s' ], [ '%d' ] );
+    }
+
     public static function end_chat( $id, $conversation = null ) {
         global $wpdb;
         $table  = self::table_name();
@@ -90,6 +95,36 @@ class Ai_Agent_DB {
             $format[] = '%s';
         }
         $wpdb->update( $table, $data, [ 'id' => (int) $id ], $format, [ '%d' ] );
+    }
+
+    public static function mark_finished_once( $id, $message ) {
+        global $wpdb;
+        $row = $wpdb->get_row( $wpdb->prepare( 'SELECT ended, conversation FROM ' . self::table_name() . ' WHERE id = %d', $id ) );
+        if ( ! $row ) {
+            return [];
+        }
+        if ( (int) $row->ended ) {
+            return json_decode( (string) $row->conversation, true ) ?: [];
+        }
+        $conv = json_decode( (string) $row->conversation, true ) ?: [];
+        $conv[] = [
+            'role'    => 'assistant',
+            'content' => $message,
+            'ts'      => time(),
+            'system'  => true,
+        ];
+        $wpdb->update(
+            self::table_name(),
+            [
+                'conversation'  => wp_json_encode( $conv ),
+                'ended'         => 1,
+                'last_activity' => current_time( 'mysql', true ),
+            ],
+            [ 'id' => (int) $id ],
+            [ '%s', '%d', '%s' ],
+            [ '%d' ]
+        );
+        return $conv;
     }
 
     public static function get_chats() {

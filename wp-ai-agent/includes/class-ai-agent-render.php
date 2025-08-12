@@ -14,7 +14,7 @@ class Ai_Agent_Render {
         $settings = wp_ai_agent_get_settings();
 
         return [
-            'ajax'       => admin_url( 'admin-ajax.php' ),
+            'ajaxUrl'    => admin_url( 'admin-ajax.php' ),
             'assets'     => WP_AI_AGENT_URL . 'assets',
             'enterSend'  => ! empty( $settings['enter_send'] ),
             'sound'      => ! empty( $settings['sound'] ),
@@ -30,7 +30,7 @@ class Ai_Agent_Render {
                 'chatRoot'    => '[data-wpai-chat-root]',
                 'messageList' => '[data-wpai-message-list]',
             ],
-            'expiry'     => isset( $settings['chat_expiry_minutes'] ) ? (int) $settings['chat_expiry_minutes'] : 20,
+            'expiryMinutes' => isset( $settings['chat_expiry_minutes'] ) ? (int) $settings['chat_expiry_minutes'] : 20,
             'nonce'      => wp_create_nonce( 'wpai_agent' ),
             'i18n'       => [
                 'finished' => __( 'This chat has finished due to inactivity. Click “Start new chat” to continue.', 'wp-ai-agent' ),
