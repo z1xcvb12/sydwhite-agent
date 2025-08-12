@@ -92,6 +92,31 @@ class Ai_Agent_DB {
         $wpdb->update( $table, $data, [ 'id' => (int) $id ], $format, [ '%d' ] );
     }
 
+    public static function touch_activity( $id ) {
+        global $wpdb;
+        $wpdb->update( self::table_name(), [ 'last_activity' => current_time( 'mysql', true ) ], [ 'id' => (int) $id ], [ '%s' ], [ '%d' ] );
+    }
+
+    public static function mark_finished_once( $id, $message ) {
+        global $wpdb;
+        $table = self::table_name();
+        $row   = $wpdb->get_row( $wpdb->prepare( "SELECT conversation, ended FROM $table WHERE id = %d", $id ) );
+        if ( ! $row ) {
+            return [];
+        }
+        $conv = json_decode( (string) $row->conversation, true ) ?: [];
+        if ( (int) $row->ended ) {
+            return $conv;
+        }
+        $conv[] = $message;
+        $wpdb->update( $table, [
+            'conversation'  => wp_json_encode( $conv ),
+            'ended'         => 1,
+            'last_activity' => current_time( 'mysql', true ),
+        ], [ 'id' => (int) $id ], [ '%s','%d','%s' ], [ '%d' ] );
+        return $conv;
+    }
+
     public static function get_chats() {
         global $wpdb;
         return $wpdb->get_results( "SELECT * FROM " . self::table_name() . " ORDER BY timestamp DESC" );

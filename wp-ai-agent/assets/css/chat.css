@@ -26,3 +26,5 @@
 .ai-agent-msg.bot.system{background:#f1f1f1;font-style:italic;}
 .ai-agent-finished{margin:8px 4px;text-align:left;}
 .ai-agent-finished .ai-agent-btn-new{background:#34B7F1;color:#fff;border:none;padding:6px 12px;border-radius:6px;cursor:pointer;}
+.wpai-finished{display:flex;gap:8px;margin:8px 0;max-width:80%;background:#fff;border-radius:14px;padding:10px 12px}
+.wpai-finished .wpai-btn-start-new{border:0;border-radius:14px;padding:6px 10px;cursor:pointer}
