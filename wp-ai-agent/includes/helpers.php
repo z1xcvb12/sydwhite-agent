@@ -30,6 +30,37 @@ if ( ! function_exists( 'wp_ai_agent_decrypt' ) ) {
     }
 }
 
+if ( ! function_exists( 'ai_agent_uuidv4' ) ) {
+    function ai_agent_uuidv4(): string {
+        return wp_generate_uuid4();
+    }
+}
+
+if ( ! function_exists( 'ai_agent_ensure_vid_cookie' ) ) {
+    function ai_agent_ensure_vid_cookie() {
+        $vid = isset( $_COOKIE['ai_agent_vid'] ) ? sanitize_text_field( wp_unslash( $_COOKIE['ai_agent_vid'] ) ) : '';
+        if ( ! $vid ) {
+            $vid = ai_agent_uuidv4();
+        }
+
+        if ( headers_sent() ) {
+            $_COOKIE['ai_agent_vid'] = $vid;
+            return;
+        }
+
+        setcookie( 'ai_agent_vid', $vid, [
+            'expires'  => time() + YEAR_IN_SECONDS,
+            'path'     => '/',
+            'secure'   => is_ssl(),
+            'httponly' => false,
+            'samesite' => 'Lax',
+        ] );
+        $_COOKIE['ai_agent_vid'] = $vid;
+    }
+}
+
+add_action( 'init', 'ai_agent_ensure_vid_cookie', 0 );
+
 if ( ! function_exists( 'ai_agent_get_client_ip' ) ) {
     function ai_agent_get_client_ip(): string {
         $keys = [

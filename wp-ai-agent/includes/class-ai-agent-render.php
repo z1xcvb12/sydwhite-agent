@@ -41,11 +41,11 @@ class Ai_Agent_Render {
 
     public function assets() {
         wp_enqueue_style( 'wp-ai-agent', WP_AI_AGENT_URL . 'assets/css/chat.css', [], WP_AI_AGENT_VERSION );
-
-        wp_register_script( 'wp-ai-agent-transport', WP_AI_AGENT_URL . 'assets/js/chat-transport.js', [], WP_AI_AGENT_VERSION, true );
-        wp_register_script( 'wp-ai-agent-frontend', WP_AI_AGENT_URL . 'assets/js/chat-frontend.js', [ 'wp-ai-agent-transport' ], WP_AI_AGENT_VERSION, true );
-        wp_localize_script( 'wp-ai-agent-frontend', 'WPAI_CONFIG', $this->config() );
-        wp_enqueue_script( 'wp-ai-agent-frontend' );
+        wp_enqueue_script( 'wp-ai-agent-chat', WP_AI_AGENT_URL . 'assets/js/chat.js', [], WP_AI_AGENT_VERSION, true );
+        wp_localize_script( 'wp-ai-agent-chat', 'wpaiAgent', [
+            'ajaxUrl' => admin_url( 'admin-ajax.php' ),
+            'nonce'   => wp_create_nonce( 'wpai_agent' ),
+        ] );
     }
 
     public function admin_assets( $hook ) {
