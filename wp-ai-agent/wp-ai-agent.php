@@ -31,6 +31,7 @@ require_once WP_AI_AGENT_DIR . 'includes/class-ai-agent-render.php';
  */
 function wp_ai_agent_activate() {
     Ai_Agent_DB::create_tables();
+    Ai_Agent_DB::maybe_upgrade_schema();
     Ai_Agent_DB::schedule_cron();
 }
 register_activation_hook( __FILE__, 'wp_ai_agent_activate' );
@@ -46,6 +47,7 @@ register_deactivation_hook( __FILE__, 'wp_ai_agent_deactivate' );
 // Initialize plugin pieces.
 add_action( 'plugins_loaded', function() {
     load_plugin_textdomain( 'wp-ai-agent', false, dirname( plugin_basename( __FILE__ ) ) . '/languages' );
+    Ai_Agent_DB::maybe_upgrade_schema();
     new Ai_Agent_Admin();
     new Ai_Agent_AJAX();
     new Ai_Agent_Handbooks();

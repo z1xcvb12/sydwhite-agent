@@ -3,6 +3,8 @@
     const selectors = config.selectors || {};
     const rootSelector = selectors.chatRoot || '[data-wpai-chat-root]';
     const listSelector = selectors.messageList || '[data-wpai-message-list]';
+    let expiryTimer = null;
+    let finished = false;
 
     function uuidv4(){
         return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){
@@ -92,7 +94,85 @@
             return m;
         }
 
+        function addBot(text, system){
+            const m = document.createElement('div');
+            m.className = 'ai-agent-msg bot' + (system ? ' system' : '');
+            m.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> ' + text;
+            list.appendChild(m);
+            scrollBottom();
+        }
+
+        function renderConversation(conv){
+            conv.forEach(function(m){
+                if(m.role === 'user'){
+                    addUser(m.content);
+                } else if(m.system){
+                    addBot(m.content, true);
+                } else {
+                    addBot(m.content);
+                }
+            });
+        }
+
+        function clearExpiry(){ if(expiryTimer){ clearTimeout(expiryTimer); expiryTimer = null; } }
+        function startExpiry(){
+            clearExpiry();
+            const minutes = parseInt(config.expiry || 20, 10);
+            expiryTimer = setTimeout(function(){ showFinishedBanner(); }, Math.max(1, minutes) * 60 * 1000);
+        }
+
+        function showFinishedBanner(existing){
+            if(!existing){
+                addBot((config.i18n && config.i18n.finished) || 'This chat has finished due to inactivity. Click “Start new chat” to continue.', true);
+            }
+            const wrap = document.createElement('div');
+            wrap.className = 'ai-agent-finished';
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'ai-agent-btn-new';
+            btn.textContent = (config.i18n && config.i18n.startNew) || 'Start new chat';
+            btn.addEventListener('click', function(){
+                finished = false;
+                convo = [];
+                if(config.ajax){
+                    const fd = new FormData();
+                    fd.append('action','ai_agent_end_session');
+                    fd.append('nonce', config.nonce || '');
+                    fetch(config.ajax, {method:'POST', body:fd, credentials:'same-origin'});
+                }
+                wrap.remove();
+            });
+            wrap.appendChild(btn);
+            list.appendChild(wrap);
+            scrollBottom();
+            finished = true;
+            clearExpiry();
+        }
+
+        async function hydrate(){
+            if(!config.ajax){ return; }
+            const fd = new FormData();
+            fd.append('action','ai_agent_get_session');
+            fd.append('nonce', config.nonce || '');
+            try{
+                const res = await fetch(config.ajax, {method:'POST', body:fd, credentials:'same-origin'});
+                const json = await res.json();
+                const data = json && json.data ? json.data : {};
+                if(Array.isArray(data.conversation)){
+                    convo = data.conversation;
+                    renderConversation(convo);
+                }
+                if(data.status === 'active'){
+                    startExpiry();
+                } else if(data.status === 'expired'){
+                    showFinishedBanner(true);
+                }
+            } catch(e){}
+        }
+
         async function sendMsg(msg){
+            if(finished){ finished = false; convo = []; }
+            startExpiry();
             const typingEl = showTyping();
             ta.disabled = true;
             send.disabled = true;
@@ -112,7 +192,8 @@
                             textNode.textContent += tok;
                         }
                         scrollBottom();
-                    }
+                    },
+                    onDone: function(){ startExpiry(); }
                 });
                 convo.push({role:'user',content:msg});
                 convo.push({role:'assistant',content:full});
@@ -157,6 +238,8 @@
                 }
             });
         }
+
+        hydrate();
     }
 
     function boot(){
