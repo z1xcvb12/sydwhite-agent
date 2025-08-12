@@ -41,14 +41,23 @@ class Ai_Agent_AJAX {
         $ip_hash  = ai_agent_ip_hash();
         $found    = Ai_Agent_DB::get_active_by_vid_or_ip( $visitor, $ip_hash, $expiry );
         $chat_id  = null;
+        $conversation = [];
         if ( $found && ! $found->expired ) {
-            $chat_id     = (int) $found->row->id;
+            $chat_id      = (int) $found->row->id;
             $conversation = json_decode( (string) $found->row->conversation, true ) ?: [];
         } elseif ( $found && $found->expired ) {
-            $prev = json_decode( (string) $found->row->conversation, true ) ?: [];
-            Ai_Agent_DB::end_chat( (int) $found->row->id, $prev );
-            $conversation = [];
+            Ai_Agent_DB::mark_finished_once(
+                (int) $found->row->id,
+                [
+                    'role'   => 'assistant',
+                    'content'=> __( 'This chat has finished due to inactivity. Click “Start new chat” to continue.', 'wp-ai-agent' ),
+                    'ts'     => time(),
+                    'system' => true,
+                ]
+            );
         }
+        $conversation[] = [ 'role' => 'user', 'content' => $message, 'ts' => time() ];
+        $chat_id = Ai_Agent_DB::save_chat( $visitor, $ip_hash, $conversation, $chat_id );
         $handbook = Ai_Agent_Handbooks::get_prompt();
         $system   = $handbook;
         if ( ! empty( $settings['quote_rules'] ) ) {
@@ -58,14 +67,12 @@ class Ai_Agent_AJAX {
         foreach ( $conversation as $c ) {
             $messages[] = [ 'role' => $c['role'], 'content' => $c['content'] ];
         }
-        $messages[] = [ 'role' => 'user', 'content' => $message ];
 
         header( 'Content-Type: text/event-stream' );
         header( 'Cache-Control: no-cache' );
         header( 'X-Accel-Buffering: no' );
 
-        $response      = $this->stream_api( $settings, $messages );
-        $conversation[] = [ 'role' => 'user', 'content' => $message, 'ts' => time() ];
+        $response       = $this->stream_api( $settings, $messages, $chat_id );
         $conversation[] = [ 'role' => 'assistant', 'content' => $response, 'ts' => time() ];
         Ai_Agent_DB::save_chat( $visitor, $ip_hash, $conversation, $chat_id );
         wp_die();
@@ -79,18 +86,20 @@ class Ai_Agent_AJAX {
         $ip_hash  = ai_agent_ip_hash();
         $found    = Ai_Agent_DB::get_active_by_vid_or_ip( $visitor, $ip_hash, $expiry );
         if ( ! $found ) {
-            wp_send_json_success( [ 'status' => 'none' ] );
+            wp_send_json_success( [ 'status' => 'none', 'conversation' => [] ] );
         }
         $row  = $found->row;
         $conv = json_decode( (string) $row->conversation, true ) ?: [];
-        if ( $found->expired && ! (int) $row->ended ) {
-            $conv[] = [
-                'role'   => 'assistant',
-                'content'=> __( 'This chat has finished due to inactivity. Click “Start new chat” to continue.', 'wp-ai-agent' ),
-                'ts'     => time(),
-                'system' => true,
-            ];
-            Ai_Agent_DB::end_chat( (int) $row->id, $conv );
+        if ( $found->expired ) {
+            $conv = Ai_Agent_DB::mark_finished_once(
+                (int) $row->id,
+                [
+                    'role'   => 'assistant',
+                    'content'=> __( 'This chat has finished due to inactivity. Click “Start new chat” to continue.', 'wp-ai-agent' ),
+                    'ts'     => time(),
+                    'system' => true,
+                ]
+            );
             wp_send_json_success( [ 'status' => 'expired', 'conversation' => $conv ] );
         }
         wp_send_json_success( [ 'status' => 'active', 'conversation' => $conv ] );
@@ -99,24 +108,24 @@ class Ai_Agent_AJAX {
     public function end_session() {
         check_ajax_referer( 'wpai_agent', 'nonce' );
         $visitor = isset( $_COOKIE['ai_agent_vid'] ) ? sanitize_text_field( wp_unslash( $_COOKIE['ai_agent_vid'] ) ) : '';
-        if ( ! $visitor ) {
-            wp_send_json_success();
-        }
-        $row = Ai_Agent_DB::get_active_by_vid_or_ip( $visitor, ai_agent_ip_hash(), PHP_INT_MAX );
-        if ( $row && $row->row && ! (int) $row->row->ended ) {
-            $conv = json_decode( (string) $row->row->conversation, true ) ?: [];
-            $conv[] = [
-                'role'   => 'assistant',
-                'content'=> __( 'This chat has finished due to inactivity. Click “Start new chat” to continue.', 'wp-ai-agent' ),
-                'ts'     => time(),
-                'system' => true,
-            ];
-            Ai_Agent_DB::end_chat( (int) $row->row->id, $conv );
+        if ( $visitor ) {
+            $row = Ai_Agent_DB::get_active_by_vid_or_ip( $visitor, ai_agent_ip_hash(), PHP_INT_MAX );
+            if ( $row && $row->row ) {
+                Ai_Agent_DB::mark_finished_once(
+                    (int) $row->row->id,
+                    [
+                        'role'   => 'assistant',
+                        'content'=> __( 'This chat has finished due to inactivity. Click “Start new chat” to continue.', 'wp-ai-agent' ),
+                        'ts'     => time(),
+                        'system' => true,
+                    ]
+                );
+            }
         }
         wp_send_json_success();
     }
 
-    protected function stream_api( $settings, $messages ) {
+    protected function stream_api( $settings, $messages, $chat_id = null ) {
         $alt = wp_ai_agent_decrypt( $settings['alt_key'] );
         $open = wp_ai_agent_decrypt( $settings['openai_key'] );
         $model = $settings['model'] ?: 'gpt-4o-mini';
@@ -139,9 +148,12 @@ class Ai_Agent_AJAX {
         curl_setopt( $ch, CURLOPT_POSTFIELDS, wp_json_encode( $body ) );
         curl_setopt( $ch, CURLOPT_RETURNTRANSFER, false );
         $buffer = '';
-        curl_setopt( $ch, CURLOPT_WRITEFUNCTION, function( $ch, $data ) use ( &$buffer ) {
+        curl_setopt( $ch, CURLOPT_WRITEFUNCTION, function( $ch, $data ) use ( &$buffer, $chat_id ) {
             $buffer .= $data;
             echo $data;
+            if ( $chat_id ) {
+                Ai_Agent_DB::touch_activity( (int) $chat_id );
+            }
             @ob_flush();
             flush();
             return strlen( $data );

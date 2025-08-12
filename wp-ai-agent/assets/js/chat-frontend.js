@@ -5,6 +5,7 @@
     const listSelector = selectors.messageList || '[data-wpai-message-list]';
     let expiryTimer = null;
     let finished = false;
+    let allowNew = false;
 
     function uuidv4(){
         return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){
@@ -65,14 +66,25 @@
         const ta = win.querySelector('textarea');
         const send = win.querySelector('button');
         const list = win.querySelector(listSelector);
+        const storageKey = 'wpai_conv_' + visitor;
         let convo = [];
 
         function scrollBottom(){ list.scrollTop = list.scrollHeight; }
 
-        function addUser(text){
+        function persist(){ try{ localStorage.setItem(storageKey, JSON.stringify(convo)); }catch(e){} }
+
+        function hydrateLocal(){
+            try{ const raw = localStorage.getItem(storageKey); if(raw){ const arr = JSON.parse(raw); if(Array.isArray(arr) && arr.length){ convo = arr; renderConversation(convo); } } }catch(e){}
+        }
+
+        function clearMessages(){ list.innerHTML = ''; }
+
+        function addUser(text, ts){
             const m = document.createElement('div');
             m.className = 'ai-agent-msg user';
             m.textContent = text;
+            m.setAttribute('data-role','user');
+            if(ts){ m.setAttribute('data-ts', ts); }
             list.appendChild(m);
             scrollBottom();
         }
@@ -94,10 +106,12 @@
             return m;
         }
 
-        function addBot(text, system){
+        function addBot(text, system, ts){
             const m = document.createElement('div');
             m.className = 'ai-agent-msg bot' + (system ? ' system' : '');
             m.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> ' + text;
+            m.setAttribute('data-role','assistant');
+            if(ts){ m.setAttribute('data-ts', ts); }
             list.appendChild(m);
             scrollBottom();
         }
@@ -105,11 +119,11 @@
         function renderConversation(conv){
             conv.forEach(function(m){
                 if(m.role === 'user'){
-                    addUser(m.content);
+                    addUser(m.content, m.ts);
                 } else if(m.system){
-                    addBot(m.content, true);
+                    addBot(m.content, true, m.ts);
                 } else {
-                    addBot(m.content);
+                    addBot(m.content, false, m.ts);
                 }
             });
         }
@@ -122,8 +136,13 @@
         }
 
         function showFinishedBanner(existing){
+            if(finished){ return; }
+            let msg;
             if(!existing){
-                addBot((config.i18n && config.i18n.finished) || 'This chat has finished due to inactivity. Click “Start new chat” to continue.', true);
+                msg = (config.i18n && config.i18n.finished) || 'This chat has finished due to inactivity. Click “Start new chat” to continue.';
+                addBot(msg, true, Math.floor(Date.now()/1000));
+                convo.push({role:'assistant', content:msg, ts:Math.floor(Date.now()/1000), system:true});
+                persist();
             }
             const wrap = document.createElement('div');
             wrap.className = 'ai-agent-finished';
@@ -132,8 +151,7 @@
             btn.className = 'ai-agent-btn-new';
             btn.textContent = (config.i18n && config.i18n.startNew) || 'Start new chat';
             btn.addEventListener('click', function(){
-                finished = false;
-                convo = [];
+                allowNew = true;
                 if(config.ajax){
                     const fd = new FormData();
                     fd.append('action','ai_agent_end_session');
@@ -159,8 +177,13 @@
                 const json = await res.json();
                 const data = json && json.data ? json.data : {};
                 if(Array.isArray(data.conversation)){
-                    convo = data.conversation;
-                    renderConversation(convo);
+                    const serverConv = data.conversation;
+                    if(JSON.stringify(serverConv) !== JSON.stringify(convo)){
+                        convo = serverConv;
+                        clearMessages();
+                        renderConversation(convo);
+                    }
+                    persist();
                 }
                 if(data.status === 'active'){
                     startExpiry();
@@ -171,18 +194,30 @@
         }
 
         async function sendMsg(msg){
-            if(finished){ finished = false; convo = []; }
+            if(finished || allowNew){
+                convo = [];
+                persist();
+                finished = false;
+                allowNew = false;
+            }
             startExpiry();
             const typingEl = showTyping();
             ta.disabled = true;
             send.disabled = true;
+            const prevConv = convo.slice();
+            const tsUser = Math.floor(Date.now()/1000);
+            addUser(msg, tsUser);
+            convo.push({role:'user', content:msg, ts:tsUser});
+            persist();
             let textNode;
+            let firstChunk = true;
             try{
                 const full = await window.WPAI.sendChatRequest({
                     url: config.ajax + '?action=ai_agent_chat',
                     headers: { 'Content-Type': 'application/json' },
-                    body: { visitor: visitor, message: msg, conversation: convo },
+                    body: { visitor: visitor, message: msg, conversation: prevConv },
                     onToken: function(tok){
+                        if(firstChunk){ firstChunk = false; startExpiry(); }
                         if(!textNode){
                             typingEl.classList.remove('typing');
                             typingEl.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> ';
@@ -195,8 +230,9 @@
                     },
                     onDone: function(){ startExpiry(); }
                 });
-                convo.push({role:'user',content:msg});
-                convo.push({role:'assistant',content:full});
+                const tsAssist = Math.floor(Date.now()/1000);
+                convo.push({role:'assistant', content:full, ts:tsAssist});
+                persist();
                 if(!textNode){
                     typingEl.classList.remove('typing');
                     typingEl.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> '+full;
@@ -215,6 +251,7 @@
                 err.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> Error';
                 list.appendChild(err);
                 scrollBottom();
+                startExpiry();
             } finally {
                 ta.disabled = false;
                 send.disabled = false;
@@ -226,7 +263,6 @@
             const msg = ta.value.trim();
             if(!msg){ return; }
             ta.value = '';
-            addUser(msg);
             sendMsg(msg);
         });
 
@@ -239,6 +275,7 @@
             });
         }
 
+        hydrateLocal();
         hydrate();
     }
 

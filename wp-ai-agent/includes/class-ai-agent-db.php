@@ -71,10 +71,40 @@ class Ai_Agent_DB {
             }
         }
         $expired = false;
-        if ( $row->last_activity && ( $now - strtotime( $row->last_activity ) ) > (int) $expiry_minutes * 60 ) {
+        if ( $row->last_activity && ( $now - strtotime( $row->last_activity . ' UTC' ) ) > (int) $expiry_minutes * 60 ) {
             $expired = true;
         }
         return (object) [ 'row' => $row, 'expired' => $expired ];
+    }
+
+    public static function touch_activity( $id ) {
+        global $wpdb;
+        $wpdb->update( self::table_name(), [ 'last_activity' => current_time( 'mysql', true ) ], [ 'id' => (int) $id ], [ '%s' ], [ '%d' ] );
+    }
+
+    public static function mark_finished_once( $id, array $finish ) {
+        global $wpdb;
+        $table = self::table_name();
+        $row   = $wpdb->get_row( $wpdb->prepare( "SELECT conversation, ended FROM $table WHERE id = %d", $id ) );
+        if ( ! $row ) {
+            return [];
+        }
+        $conv = json_decode( (string) $row->conversation, true ) ?: [];
+        if ( ! (int) $row->ended ) {
+            $conv[] = $finish;
+            $wpdb->update(
+                $table,
+                [
+                    'conversation'  => wp_json_encode( $conv ),
+                    'ended'         => 1,
+                    'last_activity' => current_time( 'mysql', true ),
+                ],
+                [ 'id' => (int) $id ],
+                [ '%s', '%d', '%s' ],
+                [ '%d' ]
+            );
+        }
+        return $conv;
     }
 
     public static function end_chat( $id, $conversation = null ) {
