@@ -1,5 +1,5 @@
 (function(){
-    const config = window.WPAI_CONFIG || {};
+    const config = window.WPAIAgent || {};
     const selectors = config.selectors || {};
     const rootSelector = selectors.chatRoot || '[data-wpai-chat-root]';
     const listSelector = selectors.messageList || '[data-wpai-message-list]';
@@ -99,7 +99,7 @@
             let textNode;
             try{
                 const full = await window.WPAI.sendChatRequest({
-                    url: config.ajax + '?action=ai_agent_chat',
+                    url: config.ajaxUrl + '?action=ai_agent_chat',
                     headers: { 'Content-Type': 'application/json' },
                     body: { visitor: visitor, message: msg, conversation: convo },
                     onToken: function(tok){
