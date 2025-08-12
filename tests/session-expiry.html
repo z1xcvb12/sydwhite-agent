@@ -1,0 +1,17 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Session Expiry Demo</title>
+<link rel="stylesheet" href="../wp-ai-agent/assets/css/chat.css">
+<div id="wp-ai-agent-root" data-wpai-chat-root></div>
+<script src="../wp-ai-agent/assets/js/chat-transport.js"></script>
+<script src="../wp-ai-agent/assets/js/chat-frontend.js"></script>
+<script>
+window.WPAI_CONFIG = {
+    ajax: '#',
+    assets: '../wp-ai-agent/assets',
+    nonce: 'test',
+    expiry: 0.01,
+    i18n: { finished: 'This chat has finished due to inactivity. Click “Start new chat” to continue.', startNew: 'Start new chat' },
+    agentNames: ['Test Bot']
+};
+</script>

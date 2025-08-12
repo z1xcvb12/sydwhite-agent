@@ -7,6 +7,10 @@ class Ai_Agent_AJAX {
     public function __construct() {
         add_action( 'wp_ajax_ai_agent_chat', [ $this, 'chat' ] );
         add_action( 'wp_ajax_nopriv_ai_agent_chat', [ $this, 'chat' ] );
+        add_action( 'wp_ajax_ai_agent_get_session', [ $this, 'get_session' ] );
+        add_action( 'wp_ajax_nopriv_ai_agent_get_session', [ $this, 'get_session' ] );
+        add_action( 'wp_ajax_ai_agent_end_session', [ $this, 'end_session' ] );
+        add_action( 'wp_ajax_nopriv_ai_agent_end_session', [ $this, 'end_session' ] );
     }
 
     protected function rate_limit( $visitor_id ) {
@@ -18,32 +22,103 @@ class Ai_Agent_AJAX {
         set_transient( $key, time(), 2 );
     }
 
+    public function get_session() {
+        check_ajax_referer( 'wpai_agent', 'nonce' );
+        $settings = wp_ai_agent_get_settings();
+        $expiry   = isset( $settings['chat_expiry_minutes'] ) ? (int) $settings['chat_expiry_minutes'] : 20;
+        $visitor  = isset( $_COOKIE['ai_agent_vid'] ) ? sanitize_text_field( wp_unslash( $_COOKIE['ai_agent_vid'] ) ) : '';
+        $ip_hash  = ai_agent_ip_hash();
+        $found    = Ai_Agent_DB::get_active_by_vid_or_ip( $visitor, $ip_hash, $expiry );
+        if ( ! $found ) {
+            wp_send_json_success( [ 'status' => 'none' ] );
+        }
+        $row  = $found['row'];
+        $conv = json_decode( $row->conversation, true ) ?: [];
+        if ( $found['expired'] && ! $row->ended ) {
+            $finish = [
+                'role'    => 'assistant',
+                'content' => __( 'This chat has finished due to inactivity. Click “Start new chat” to continue.', 'wp-ai-agent' ),
+                'ts'      => time(),
+                'system'  => true,
+            ];
+            $conv[] = $finish;
+            Ai_Agent_DB::update_session( $row->id, $conv, 1, $visitor ?: $row->visitor_id );
+            wp_send_json_success( [ 'status' => 'expired', 'conversation' => $conv ] );
+        }
+        if ( empty( $row->visitor_id ) && $visitor ) {
+            Ai_Agent_DB::update_session( $row->id, $conv, 0, $visitor );
+        }
+        wp_send_json_success( [ 'status' => 'active', 'conversation' => $conv ] );
+    }
+
+    public function end_session() {
+        check_ajax_referer( 'wpai_agent', 'nonce' );
+        $visitor = isset( $_COOKIE['ai_agent_vid'] ) ? sanitize_text_field( wp_unslash( $_COOKIE['ai_agent_vid'] ) ) : '';
+        $ip_hash = ai_agent_ip_hash();
+        $settings = wp_ai_agent_get_settings();
+        $expiry   = isset( $settings['chat_expiry_minutes'] ) ? (int) $settings['chat_expiry_minutes'] : 20;
+        $found    = Ai_Agent_DB::get_active_by_vid_or_ip( $visitor, $ip_hash, $expiry );
+        if ( $found && ! $found['row']->ended ) {
+            $conv = json_decode( $found['row']->conversation, true ) ?: [];
+            $conv[] = [
+                'role'    => 'assistant',
+                'content' => __( 'This chat has finished due to inactivity. Click “Start new chat” to continue.', 'wp-ai-agent' ),
+                'ts'      => time(),
+                'system'  => true,
+            ];
+            Ai_Agent_DB::update_session( $found['row']->id, $conv, 1, $visitor ?: $found['row']->visitor_id );
+        }
+        wp_send_json_success();
+    }
+
     public function chat() {
         nocache_headers();
-        $input = file_get_contents( 'php://input' );
-        $json  = json_decode( $input, true );
-        if ( is_array( $json ) ) {
-            $visitor      = sanitize_text_field( $json['visitor'] ?? '' );
-            $message      = sanitize_textarea_field( $json['message'] ?? '' );
-            $conversation = isset( $json['conversation'] ) ? (array) $json['conversation'] : [];
-        } else {
-            $visitor      = sanitize_text_field( $_POST['visitor'] ?? '' );
-            $message      = sanitize_textarea_field( $_POST['message'] ?? '' );
-            $conversation = isset( $_POST['conversation'] ) ? json_decode( wp_unslash( $_POST['conversation'] ), true ) : [];
+        $input  = file_get_contents( 'php://input' );
+        $json   = json_decode( $input, true );
+        $visitor = sanitize_text_field( $json['visitor'] ?? '' );
+        $message = sanitize_textarea_field( $json['message'] ?? '' );
+        $force   = ! empty( $json['new_session'] );
+        $nonce   = sanitize_text_field( $json['nonce'] ?? '' );
+        if ( ! wp_verify_nonce( $nonce, 'wpai_agent' ) ) {
+            wp_send_json_error( [ 'error' => 'invalid_nonce' ], 403 );
         }
         $this->rate_limit( $visitor );
 
         $settings = wp_ai_agent_get_settings();
+        $expiry   = isset( $settings['chat_expiry_minutes'] ) ? (int) $settings['chat_expiry_minutes'] : 20;
         $handbook = Ai_Agent_Handbooks::get_prompt();
-        $system = $handbook;
+        $system   = $handbook;
         if ( ! empty( $settings['quote_rules'] ) ) {
             $system .= "\nQuote rules:\n" . $settings['quote_rules'];
         }
+        $ip_hash = ai_agent_ip_hash();
+        $found   = Ai_Agent_DB::get_active_by_vid_or_ip( $visitor, $ip_hash, $expiry );
+        if ( $found && $found['expired'] ) {
+            $old = json_decode( $found['row']->conversation, true ) ?: [];
+            if ( ! $found['row']->ended ) {
+                $old[] = [ 'role' => 'assistant', 'content' => __( 'This chat has finished due to inactivity. Click “Start new chat” to continue.', 'wp-ai-agent' ), 'ts' => time(), 'system' => true ];
+                Ai_Agent_DB::update_session( $found['row']->id, $old, 1, $visitor ?: $found['row']->visitor_id );
+            }
+            $found = null;
+        }
+        if ( $force || ! $found ) {
+            $session_id  = Ai_Agent_DB::create_session( $visitor, $ip_hash );
+            $conversation = [];
+        } else {
+            $session_id  = $found['row']->id;
+            $conversation = json_decode( $found['row']->conversation, true ) ?: [];
+            if ( empty( $found['row']->visitor_id ) && $visitor ) {
+                Ai_Agent_DB::update_session( $session_id, $conversation, 0, $visitor );
+            }
+        }
+
+        $conversation[] = [ 'role' => 'user', 'content' => $message, 'ts' => time() ];
+        Ai_Agent_DB::update_session( $session_id, $conversation, 0, $visitor );
+
         $messages = [ [ 'role' => 'system', 'content' => $system ] ];
         foreach ( $conversation as $c ) {
             $messages[] = [ 'role' => $c['role'], 'content' => $c['content'] ];
         }
-        $messages[] = [ 'role' => 'user', 'content' => $message ];
 
         header( 'Content-Type: text/event-stream' );
         header( 'Cache-Control: no-cache' );
@@ -51,7 +126,8 @@ class Ai_Agent_AJAX {
 
         $response = $this->stream_api( $settings, $messages );
 
-        Ai_Agent_DB::save_chat( $visitor, array_merge( $conversation, [ [ 'role' => 'user', 'content' => $message, 'ts' => time() ], [ 'role' => 'assistant', 'content' => $response, 'ts' => time() ] ] ) );
+        $conversation[] = [ 'role' => 'assistant', 'content' => $response, 'ts' => time() ];
+        Ai_Agent_DB::update_session( $session_id, $conversation, 0, $visitor );
         wp_die();
     }
 

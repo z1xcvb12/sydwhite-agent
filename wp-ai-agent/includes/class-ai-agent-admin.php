@@ -37,6 +37,7 @@ class Ai_Agent_Admin {
         $out['debug']      = ! empty( $input['debug'] ) ? 1 : 0;
         $out['sound']      = ! empty( $input['sound'] ) ? 1 : 0;
         $out['remove']     = ! empty( $input['remove'] ) ? 1 : 0;
+        $out['chat_expiry_minutes'] = isset( $input['chat_expiry_minutes'] ) ? max( 1, (int) $input['chat_expiry_minutes'] ) : 20;
         return $out;
     }
 

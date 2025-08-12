@@ -30,6 +30,12 @@ class Ai_Agent_Render {
                 'chatRoot'    => '[data-wpai-chat-root]',
                 'messageList' => '[data-wpai-message-list]',
             ],
+            'nonce'      => wp_create_nonce( 'wpai_agent' ),
+            'expiry'     => isset( $settings['chat_expiry_minutes'] ) ? (int) $settings['chat_expiry_minutes'] : 20,
+            'i18n'       => [
+                'finished' => __( 'This chat has finished due to inactivity. Click “Start new chat” to continue.', 'wp-ai-agent' ),
+                'startNew' => __( 'Start new chat', 'wp-ai-agent' ),
+            ],
         ];
     }
 

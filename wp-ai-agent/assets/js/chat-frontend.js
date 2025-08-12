@@ -64,6 +64,8 @@
         const send = win.querySelector('button');
         const list = win.querySelector(listSelector);
         let convo = [];
+        let expiryTimer = null;
+        let allowNew = false;
 
         function scrollBottom(){ list.scrollTop = list.scrollHeight; }
 
@@ -92,16 +94,80 @@
             return m;
         }
 
+        function addBot(text, system){
+            const m = document.createElement('div');
+            m.className = 'ai-agent-msg bot' + (system ? ' system' : '');
+            m.innerHTML = '<span class="ai-agent-name">'+agentName+(system?'':'')+':</span> '+text;
+            list.appendChild(m);
+            scrollBottom();
+        }
+
+        function renderConv(arr){
+            arr.forEach(function(m){
+                if(m.role === 'user'){ addUser(m.content); }
+                else { addBot(m.content, m.system); }
+            });
+        }
+
+        function clearTimer(){ if(expiryTimer){ clearTimeout(expiryTimer); expiryTimer=null; } }
+        function startTimer(){
+            clearTimer();
+            const mins = parseInt(config.expiry || 20, 10);
+            expiryTimer = setTimeout(function(){ showFinished(true); }, Math.max(1, mins)*60*1000);
+        }
+
+        function showFinished(addMsg){
+            if(addMsg){ addBot((config.i18n&&config.i18n.finished)||'This chat has finished due to inactivity. Click “Start new chat” to continue.', true); }
+            const wrap = document.createElement('div');
+            wrap.className = 'ai-agent-finish';
+            const btn = document.createElement('button');
+            btn.textContent = (config.i18n&&config.i18n.startNew)||'Start new chat';
+            btn.addEventListener('click', function(){
+                allowNew = true;
+                clearTimer();
+                try{
+                    const fd = new FormData();
+                    fd.append('action','ai_agent_end_session');
+                    fd.append('nonce', config.nonce || '');
+                    fetch(config.ajax, {method:'POST', body:fd, credentials:'same-origin'});
+                }catch(e){}
+            });
+            wrap.appendChild(btn);
+            list.appendChild(wrap);
+            scrollBottom();
+        }
+
+        function bootstrap(){
+            const fd = new FormData();
+            fd.append('action','ai_agent_get_session');
+            fd.append('nonce', config.nonce || '');
+            fetch(config.ajax, {method:'POST', body:fd, credentials:'same-origin'})
+                .then(r=>r.json())
+                .then(res=>{
+                    if(!res || !res.success){ return; }
+                    const data = res.data || {};
+                    if(Array.isArray(data.conversation)){
+                        convo = data.conversation;
+                        renderConv(convo);
+                    }
+                    if(data.status === 'active'){ startTimer(); }
+                    if(data.status === 'expired'){ showFinished(false); }
+                })
+                .catch(()=>{});
+        }
+
         async function sendMsg(msg){
             const typingEl = showTyping();
             ta.disabled = true;
             send.disabled = true;
             let textNode;
+            const newFlag = allowNew ? 1 : 0; allowNew = false;
+            startTimer();
             try{
                 const full = await window.WPAI.sendChatRequest({
                     url: config.ajax + '?action=ai_agent_chat',
                     headers: { 'Content-Type': 'application/json' },
-                    body: { visitor: visitor, message: msg, conversation: convo },
+                    body: { visitor: visitor, message: msg, new_session: newFlag, nonce: config.nonce },
                     onToken: function(tok){
                         if(!textNode){
                             typingEl.classList.remove('typing');
@@ -112,7 +178,8 @@
                             textNode.textContent += tok;
                         }
                         scrollBottom();
-                    }
+                    },
+                    onDone: function(){ startTimer(); }
                 });
                 convo.push({role:'user',content:msg});
                 convo.push({role:'assistant',content:full});
@@ -157,6 +224,7 @@
                 }
             });
         }
+        bootstrap();
     }
 
     function boot(){
