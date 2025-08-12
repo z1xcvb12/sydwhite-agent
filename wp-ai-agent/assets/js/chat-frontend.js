@@ -1,5 +1,5 @@
 (function(){
-    const config = window.WPAI_CONFIG || {};
+    const config = window.WPAIAgent || {};
     const selectors = config.selectors || {};
     const rootSelector = selectors.chatRoot || '[data-wpai-chat-root]';
     const listSelector = selectors.messageList || '[data-wpai-message-list]';
@@ -17,7 +17,7 @@
         const m = document.cookie.match(/ai_agent_vid=([^;]+)/);
         if(m){ return m[1]; }
         const id = uuidv4();
-        document.cookie = 'ai_agent_vid=' + id + ';path=/;max-age=' + (365*24*60*60);
+        document.cookie = 'ai_agent_vid=' + id + ';path=/;max-age=' + (365*24*60*60) + ';SameSite=Lax';
         return id;
     }
 
@@ -38,6 +38,7 @@
 
     const agentName = getAgentName();
     const visitor = getVisitor();
+    const storageKey = 'wpai_conv_' + visitor;
 
     function init(root){
         if(root.dataset.wpaiInit){ return; }
@@ -114,16 +115,40 @@
             });
         }
 
+        function saveLocal(){ try{ localStorage.setItem(storageKey, JSON.stringify(convo)); }catch(e){} }
+        function hydrateLocal(){
+            try{ const a = JSON.parse(localStorage.getItem(storageKey)||'[]'); if(Array.isArray(a) && a.length){ convo=a; renderConversation(convo); } }catch(e){}
+        }
+        async function hydrateServer(){
+            if(!config.ajaxUrl){ return; }
+            const fd=new FormData(); fd.append('action','ai_agent_get_session'); fd.append('nonce', config.nonce||'');
+            try{
+                const res=await fetch(config.ajaxUrl,{method:'POST',body:fd,credentials:'same-origin'});
+                const json=await res.json(); const data=json && json.data ? json.data : {};
+                if(Array.isArray(data.conversation)){
+                    if(JSON.stringify(data.conversation)!==JSON.stringify(convo)){
+                        list.innerHTML=''; convo=data.conversation; renderConversation(convo);
+                    }
+                    saveLocal();
+                }
+                if(data.status==='active'){ startExpiry(); }
+                else if(data.status==='expired'){ showFinishedBanner(true); }
+            }catch(e){}
+        }
         function clearExpiry(){ if(expiryTimer){ clearTimeout(expiryTimer); expiryTimer = null; } }
         function startExpiry(){
             clearExpiry();
-            const minutes = parseInt(config.expiry || 20, 10);
-            expiryTimer = setTimeout(function(){ showFinishedBanner(); }, Math.max(1, minutes) * 60 * 1000);
+            const minutes = parseInt(config.expiryMinutes,10);
+            const ms = (isFinite(minutes) && minutes>0 ? minutes : 20) * 60 * 1000;
+            expiryTimer = setTimeout(function(){ showFinishedBanner(); }, ms);
         }
 
         function showFinishedBanner(existing){
             if(!existing){
-                addBot((config.i18n && config.i18n.finished) || 'This chat has finished due to inactivity. Click “Start new chat” to continue.', true);
+                const msg = (config.i18n && config.i18n.finished) || 'This chat has finished due to inactivity. Click “Start new chat” to continue.';
+                addBot(msg, true);
+                convo.push({role:'assistant',content:msg,system:true});
+                saveLocal();
             }
             const wrap = document.createElement('div');
             wrap.className = 'ai-agent-finished';
@@ -134,13 +159,14 @@
             btn.addEventListener('click', function(){
                 finished = false;
                 convo = [];
-                if(config.ajax){
+                if(config.ajaxUrl){
                     const fd = new FormData();
                     fd.append('action','ai_agent_end_session');
                     fd.append('nonce', config.nonce || '');
-                    fetch(config.ajax, {method:'POST', body:fd, credentials:'same-origin'});
+                    fetch(config.ajaxUrl, {method:'POST', body:fd, credentials:'same-origin'});
                 }
                 wrap.remove();
+                saveLocal();
             });
             wrap.appendChild(btn);
             list.appendChild(wrap);
@@ -149,37 +175,18 @@
             clearExpiry();
         }
 
-        async function hydrate(){
-            if(!config.ajax){ return; }
-            const fd = new FormData();
-            fd.append('action','ai_agent_get_session');
-            fd.append('nonce', config.nonce || '');
-            try{
-                const res = await fetch(config.ajax, {method:'POST', body:fd, credentials:'same-origin'});
-                const json = await res.json();
-                const data = json && json.data ? json.data : {};
-                if(Array.isArray(data.conversation)){
-                    convo = data.conversation;
-                    renderConversation(convo);
-                }
-                if(data.status === 'active'){
-                    startExpiry();
-                } else if(data.status === 'expired'){
-                    showFinishedBanner(true);
-                }
-            } catch(e){}
-        }
-
         async function sendMsg(msg){
-            if(finished){ finished = false; convo = []; }
+            if(finished){ finished = false; convo = []; saveLocal(); }
             startExpiry();
             const typingEl = showTyping();
             ta.disabled = true;
             send.disabled = true;
-            let textNode;
+            convo.push({role:'user',content:msg});
+            saveLocal();
+            let textNode; let gotFirst=false;
             try{
                 const full = await window.WPAI.sendChatRequest({
-                    url: config.ajax + '?action=ai_agent_chat',
+                    url: config.ajaxUrl + '?action=ai_agent_chat',
                     headers: { 'Content-Type': 'application/json' },
                     body: { visitor: visitor, message: msg, conversation: convo },
                     onToken: function(tok){
@@ -191,12 +198,13 @@
                         } else {
                             textNode.textContent += tok;
                         }
+                        if(!gotFirst){ gotFirst=true; startExpiry(); }
                         scrollBottom();
                     },
                     onDone: function(){ startExpiry(); }
                 });
-                convo.push({role:'user',content:msg});
                 convo.push({role:'assistant',content:full});
+                saveLocal();
                 if(!textNode){
                     typingEl.classList.remove('typing');
                     typingEl.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> '+full;
@@ -215,6 +223,7 @@
                 err.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> Error';
                 list.appendChild(err);
                 scrollBottom();
+                startExpiry();
             } finally {
                 ta.disabled = false;
                 send.disabled = false;
@@ -239,7 +248,8 @@
             });
         }
 
-        hydrate();
+        hydrateLocal();
+        hydrateServer();
     }
 
     function boot(){

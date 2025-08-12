@@ -59,6 +59,33 @@ class Ai_Agent_DB {
         return (int) $wpdb->insert_id;
     }
 
+    public static function touch_activity( $id ) {
+        global $wpdb;
+        $wpdb->update( self::table_name(), [ 'last_activity' => current_time( 'mysql', true ) ], [ 'id' => (int) $id ], [ '%s' ], [ '%d' ] );
+    }
+
+    public static function mark_finished_once( $id, $finish ) {
+        global $wpdb;
+        $table = self::table_name();
+        $row   = $wpdb->get_row( $wpdb->prepare( "SELECT ended, conversation FROM $table WHERE id = %d", $id ) );
+        if ( ! $row || (int) $row->ended ) {
+            return;
+        }
+        $conv   = json_decode( (string) $row->conversation, true ) ?: [];
+        $conv[] = $finish;
+        $wpdb->update(
+            $table,
+            [
+                'conversation'  => wp_json_encode( $conv ),
+                'ended'         => 1,
+                'last_activity' => current_time( 'mysql', true ),
+            ],
+            [ 'id' => (int) $id ],
+            [ '%s', '%d', '%s' ],
+            [ '%d' ]
+        );
+    }
+
     public static function get_active_by_vid_or_ip( $visitor_id, $ip_hash, $expiry_minutes ) {
         global $wpdb;
         $table = self::table_name();

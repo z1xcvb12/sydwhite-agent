@@ -30,6 +30,35 @@ if ( ! function_exists( 'wp_ai_agent_decrypt' ) ) {
     }
 }
 
+if ( ! function_exists( 'ai_agent_uuidv4' ) ) {
+    function ai_agent_uuidv4(): string {
+        $d = random_bytes( 16 );
+        $d[6] = chr( ( ord( $d[6] ) & 0x0f ) | 0x40 );
+        $d[8] = chr( ( ord( $d[8] ) & 0x3f ) | 0x80 );
+        return vsprintf( '%s%s-%s-%s-%s-%s%s%s', str_split( bin2hex( $d ), 4 ) );
+    }
+}
+
+if ( ! function_exists( 'ai_agent_ensure_vid_cookie' ) ) {
+    function ai_agent_ensure_vid_cookie(): string {
+        $name = 'ai_agent_vid';
+        $vid  = $_COOKIE[ $name ] ?? '';
+        if ( ! preg_match( '/^[a-f0-9-]{36}$/', $vid ) ) {
+            $vid = ai_agent_uuidv4();
+            if ( ! headers_sent() ) {
+                $cookie = $name . '=' . rawurlencode( $vid ) . '; Max-Age=' . YEAR_IN_SECONDS . '; Path=/; SameSite=Lax';
+                if ( is_ssl() ) {
+                    $cookie .= '; Secure';
+                }
+                header( 'Set-Cookie: ' . $cookie, false );
+            }
+            $_COOKIE[ $name ] = $vid;
+        }
+        return $vid;
+    }
+}
+add_action( 'init', 'ai_agent_ensure_vid_cookie', 0 );
+
 if ( ! function_exists( 'ai_agent_get_client_ip' ) ) {
     function ai_agent_get_client_ip(): string {
         $keys = [

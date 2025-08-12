@@ -39,7 +39,7 @@ $settings = wp_ai_agent_get_settings();
 <tr>
 <th scope="row"><label for="chat_expiry_minutes"><?php _e( 'Conversation inactivity timeout (minutes)', 'wp-ai-agent' ); ?></label></th>
 <td>
-<input type="number" min="1" id="chat_expiry_minutes" name="wp_ai_agent_settings[chat_expiry_minutes]" value="<?php echo esc_attr( $settings['chat_expiry_minutes'] ?? 20 ); ?>" />
+<input type="number" min="1" step="1" id="chat_expiry_minutes" name="wp_ai_agent_settings[chat_expiry_minutes]" value="<?php echo esc_attr( max( 1, (int) ( $settings['chat_expiry_minutes'] ?? 20 ) ) ); ?>" />
 <p class="description"><?php _e( 'If a visitor stops replying for this many minutes, the chat is marked finished. Returning users can start a new chat while the old transcript remains.', 'wp-ai-agent' ); ?></p>
 </td>
 </tr>
