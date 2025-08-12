@@ -33,6 +33,7 @@ class Ai_Agent_Admin {
         $out['model']      = sanitize_text_field( $input['model'] ?? '' );
         $out['quote_rules']= wp_kses_post( $input['quote_rules'] ?? '' );
         $out['retention']  = isset( $input['retention'] ) ? (int) $input['retention'] : 30;
+        $out['chat_expiry_minutes'] = isset( $input['chat_expiry_minutes'] ) ? max( 1, (int) $input['chat_expiry_minutes'] ) : 20;
         $out['enter_send'] = ! empty( $input['enter_send'] ) ? 1 : 0;
         $out['debug']      = ! empty( $input['debug'] ) ? 1 : 0;
         $out['sound']      = ! empty( $input['sound'] ) ? 1 : 0;
