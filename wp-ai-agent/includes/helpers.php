@@ -61,3 +61,46 @@ if ( ! function_exists( 'ai_agent_ip_hash' ) ) {
         return hash_hmac( 'sha256', $ip, $salt );
     }
 }
+
+if ( ! function_exists( 'ai_agent_uuidv4' ) ) {
+    function ai_agent_uuidv4(): string {
+        if ( function_exists( 'wp_generate_uuid4' ) ) {
+            return wp_generate_uuid4();
+        }
+        return sprintf(
+            '%04x%04x-%04x-%04x-%04x-%04x%04x%04x',
+            wp_rand( 0, 0xffff ),
+            wp_rand( 0, 0xffff ),
+            wp_rand( 0, 0xffff ),
+            wp_rand( 0, 0x0fff ) | 0x4000,
+            wp_rand( 0, 0x3fff ) | 0x8000,
+            wp_rand( 0, 0xffff ),
+            wp_rand( 0, 0xffff ),
+            wp_rand( 0, 0xffff )
+        );
+    }
+}
+
+if ( ! function_exists( 'ai_agent_ensure_vid_cookie' ) ) {
+    function ai_agent_ensure_vid_cookie(): void {
+        if ( headers_sent() ) {
+            return;
+        }
+        $vid = $_COOKIE['ai_agent_vid'] ?? '';
+        if ( empty( $vid ) ) {
+            $vid = ai_agent_uuidv4();
+            setcookie(
+                'ai_agent_vid',
+                $vid,
+                [
+                    'expires'  => time() + YEAR_IN_SECONDS,
+                    'path'     => '/',
+                    'secure'   => is_ssl(),
+                    'samesite' => 'Lax',
+                ]
+            );
+            $_COOKIE['ai_agent_vid'] = $vid;
+        }
+    }
+    add_action( 'init', 'ai_agent_ensure_vid_cookie', 0 );
+}
