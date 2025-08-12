@@ -14,6 +14,7 @@ class Ai_Agent_Render {
         $settings = wp_ai_agent_get_settings();
 
         return [
+            'ajaxUrl'    => admin_url( 'admin-ajax.php' ),
             'ajax'       => admin_url( 'admin-ajax.php' ),
             'assets'     => WP_AI_AGENT_URL . 'assets',
             'enterSend'  => ! empty( $settings['enter_send'] ),
@@ -43,7 +44,7 @@ class Ai_Agent_Render {
         wp_enqueue_style( 'wp-ai-agent', WP_AI_AGENT_URL . 'assets/css/chat.css', [], WP_AI_AGENT_VERSION );
 
         wp_register_script( 'wp-ai-agent-transport', WP_AI_AGENT_URL . 'assets/js/chat-transport.js', [], WP_AI_AGENT_VERSION, true );
-        wp_register_script( 'wp-ai-agent-frontend', WP_AI_AGENT_URL . 'assets/js/chat-frontend.js', [ 'wp-ai-agent-transport' ], WP_AI_AGENT_VERSION, true );
+        wp_register_script( 'wp-ai-agent-frontend', WP_AI_AGENT_URL . 'assets/js/chat.js', [ 'wp-ai-agent-transport' ], WP_AI_AGENT_VERSION, true );
         wp_localize_script( 'wp-ai-agent-frontend', 'WPAI_CONFIG', $this->config() );
         wp_enqueue_script( 'wp-ai-agent-frontend' );
     }

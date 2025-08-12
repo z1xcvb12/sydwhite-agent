@@ -37,17 +37,12 @@ class Ai_Agent_AJAX {
         }
         $this->rate_limit( $visitor );
         $settings = wp_ai_agent_get_settings();
-        $expiry   = isset( $settings['chat_expiry_minutes'] ) ? (int) $settings['chat_expiry_minutes'] : 20;
         $ip_hash  = ai_agent_ip_hash();
-        $found    = Ai_Agent_DB::get_active_by_vid_or_ip( $visitor, $ip_hash, $expiry );
+        $found    = Ai_Agent_DB::get_active_by_vid_or_ip( $visitor, $ip_hash );
         $chat_id  = null;
-        if ( $found && ! $found->expired ) {
-            $chat_id     = (int) $found->row->id;
-            $conversation = json_decode( (string) $found->row->conversation, true ) ?: [];
-        } elseif ( $found && $found->expired ) {
-            $prev = json_decode( (string) $found->row->conversation, true ) ?: [];
-            Ai_Agent_DB::end_chat( (int) $found->row->id, $prev );
-            $conversation = [];
+        if ( $found ) {
+            $chat_id     = (int) $found->id;
+            $conversation = json_decode( (string) $found->conversation, true ) ?: [];
         }
         $handbook = Ai_Agent_Handbooks::get_prompt();
         $system   = $handbook;
@@ -73,45 +68,31 @@ class Ai_Agent_AJAX {
 
     public function get_session() {
         check_ajax_referer( 'wpai_agent', 'nonce' );
-        $settings = wp_ai_agent_get_settings();
-        $expiry   = isset( $settings['chat_expiry_minutes'] ) ? (int) $settings['chat_expiry_minutes'] : 20;
-        $visitor  = isset( $_COOKIE['ai_agent_vid'] ) ? sanitize_text_field( wp_unslash( $_COOKIE['ai_agent_vid'] ) ) : '';
-        $ip_hash  = ai_agent_ip_hash();
-        $found    = Ai_Agent_DB::get_active_by_vid_or_ip( $visitor, $ip_hash, $expiry );
-        if ( ! $found ) {
-            wp_send_json_success( [ 'status' => 'none' ] );
+        $visitor = isset( $_COOKIE['ai_agent_vid'] ) ? sanitize_text_field( wp_unslash( $_COOKIE['ai_agent_vid'] ) ) : '';
+        $ip_hash = ai_agent_ip_hash();
+        $row     = Ai_Agent_DB::get_active_by_vid_or_ip( $visitor, $ip_hash );
+        if ( $row ) {
+            $conv = json_decode( (string) $row->conversation, true ) ?: [];
+            Ai_Agent_DB::touch_activity( (int) $row->id );
+            wp_send_json_success( [ 'status' => 'active', 'conversation' => $conv ] );
         }
-        $row  = $found->row;
-        $conv = json_decode( (string) $row->conversation, true ) ?: [];
-        if ( $found->expired && ! (int) $row->ended ) {
-            $conv[] = [
-                'role'   => 'assistant',
-                'content'=> __( 'This chat has finished due to inactivity. Click “Start new chat” to continue.', 'wp-ai-agent' ),
-                'ts'     => time(),
-                'system' => true,
-            ];
-            Ai_Agent_DB::end_chat( (int) $row->id, $conv );
+        global $wpdb;
+        $table = Ai_Agent_DB::table_name();
+        $ended = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $table WHERE (visitor_id = %s OR ip_hash = %s) ORDER BY id DESC LIMIT 1", $visitor, $ip_hash ) );
+        if ( $ended && (int) $ended->ended ) {
+            $conv = json_decode( (string) $ended->conversation, true ) ?: [];
             wp_send_json_success( [ 'status' => 'expired', 'conversation' => $conv ] );
         }
-        wp_send_json_success( [ 'status' => 'active', 'conversation' => $conv ] );
+        wp_send_json_success( [ 'status' => 'none' ] );
     }
 
     public function end_session() {
         check_ajax_referer( 'wpai_agent', 'nonce' );
         $visitor = isset( $_COOKIE['ai_agent_vid'] ) ? sanitize_text_field( wp_unslash( $_COOKIE['ai_agent_vid'] ) ) : '';
-        if ( ! $visitor ) {
-            wp_send_json_success();
-        }
-        $row = Ai_Agent_DB::get_active_by_vid_or_ip( $visitor, ai_agent_ip_hash(), PHP_INT_MAX );
-        if ( $row && $row->row && ! (int) $row->row->ended ) {
-            $conv = json_decode( (string) $row->row->conversation, true ) ?: [];
-            $conv[] = [
-                'role'   => 'assistant',
-                'content'=> __( 'This chat has finished due to inactivity. Click “Start new chat” to continue.', 'wp-ai-agent' ),
-                'ts'     => time(),
-                'system' => true,
-            ];
-            Ai_Agent_DB::end_chat( (int) $row->row->id, $conv );
+        $ip_hash = ai_agent_ip_hash();
+        $row     = Ai_Agent_DB::get_active_by_vid_or_ip( $visitor, $ip_hash );
+        if ( $row ) {
+            Ai_Agent_DB::mark_finished_once( (int) $row->id, __( 'This chat has finished due to inactivity. Click “Start new chat” to continue.', 'wp-ai-agent' ) );
         }
         wp_send_json_success();
     }

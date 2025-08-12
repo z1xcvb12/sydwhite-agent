@@ -30,6 +30,37 @@ if ( ! function_exists( 'wp_ai_agent_decrypt' ) ) {
     }
 }
 
+if ( ! function_exists( 'ai_agent_uuidv4' ) ) {
+    function ai_agent_uuidv4(): string {
+        $data = random_bytes( 16 );
+        $data[6] = chr( ( ord( $data[6] ) & 0x0f ) | 0x40 );
+        $data[8] = chr( ( ord( $data[8] ) & 0x3f ) | 0x80 );
+        return vsprintf( '%s%s-%s-%s-%s-%s%s%s', str_split( bin2hex( $data ), 4 ) );
+    }
+}
+
+if ( ! function_exists( 'ai_agent_ensure_vid_cookie' ) ) {
+    function ai_agent_ensure_vid_cookie(): string {
+        $vid = isset( $_COOKIE['ai_agent_vid'] ) ? sanitize_text_field( wp_unslash( $_COOKIE['ai_agent_vid'] ) ) : '';
+        if ( empty( $vid ) ) {
+            $vid = ai_agent_uuidv4();
+            setcookie(
+                'ai_agent_vid',
+                $vid,
+                [
+                    'expires'  => time() + YEAR_IN_SECONDS,
+                    'path'     => COOKIEPATH,
+                    'domain'   => COOKIE_DOMAIN,
+                    'secure'   => is_ssl(),
+                    'samesite' => 'Lax',
+                ]
+            );
+            $_COOKIE['ai_agent_vid'] = $vid;
+        }
+        return $vid;
+    }
+}
+
 if ( ! function_exists( 'ai_agent_get_client_ip' ) ) {
     function ai_agent_get_client_ip(): string {
         $keys = [
@@ -57,7 +88,9 @@ if ( ! function_exists( 'ai_agent_get_client_ip' ) ) {
 if ( ! function_exists( 'ai_agent_ip_hash' ) ) {
     function ai_agent_ip_hash( ?string $ip = null ): string {
         $ip   = $ip ?: ai_agent_get_client_ip();
-        $salt = defined( 'AUTH_SALT' ) ? AUTH_SALT : ( defined( 'LOGGED_IN_SALT' ) ? LOGGED_IN_SALT : wp_salt( 'auth' ) );
+        $salt = defined( 'AUTH_SALT' ) ? AUTH_SALT : wp_salt( 'auth' );
         return hash_hmac( 'sha256', $ip, $salt );
     }
 }
+
+add_action( 'init', 'ai_agent_ensure_vid_cookie', 0 );

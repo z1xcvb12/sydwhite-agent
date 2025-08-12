@@ -3,22 +3,13 @@
     const selectors = config.selectors || {};
     const rootSelector = selectors.chatRoot || '[data-wpai-chat-root]';
     const listSelector = selectors.messageList || '[data-wpai-message-list]';
+    const ajax = config.ajaxUrl || config.ajax || '';
     let expiryTimer = null;
     let finished = false;
 
-    function uuidv4(){
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,function(c){
-            const r = Math.random()*16|0, v = c === 'x' ? r : (r & 0x3 | 0x8);
-            return v.toString(16);
-        });
-    }
-
     function getVisitor(){
-        const m = document.cookie.match(/ai_agent_vid=([^;]+)/);
-        if(m){ return m[1]; }
-        const id = uuidv4();
-        document.cookie = 'ai_agent_vid=' + id + ';path=/;max-age=' + (365*24*60*60);
-        return id;
+        const m = document.cookie.match(/(?:^|; )ai_agent_vid=([^;]+)/);
+        return m ? decodeURIComponent(m[1]) : 'anon';
     }
 
     function getAgentName(){
@@ -38,6 +29,7 @@
 
     const agentName = getAgentName();
     const visitor = getVisitor();
+    const storeKey = 'wpai_conv_' + decodeURIComponent(visitor);
 
     function init(root){
         if(root.dataset.wpaiInit){ return; }
@@ -67,14 +59,35 @@
         const list = win.querySelector(listSelector);
         let convo = [];
 
+        function saveLocal(){
+            const arr = [];
+            list.querySelectorAll('.ai-agent-msg').forEach(el => {
+                let text = el.textContent;
+                const prefix = agentName + ':';
+                if((el.dataset.role||'') === 'assistant' && text.startsWith(prefix)){
+                    text = text.slice(prefix.length).trim();
+                }
+                arr.push({
+                    role: el.dataset.role || (el.classList.contains('user') ? 'user' : 'assistant'),
+                    content: text,
+                    ts: parseInt(el.dataset.ts || Date.now(),10),
+                    system: el.classList.contains('system')
+                });
+            });
+            try{ localStorage.setItem(storeKey, JSON.stringify(arr)); }catch(e){}
+        }
+
         function scrollBottom(){ list.scrollTop = list.scrollHeight; }
 
         function addUser(text){
             const m = document.createElement('div');
             m.className = 'ai-agent-msg user';
+            m.dataset.role = 'user';
+            m.dataset.ts = Date.now();
             m.textContent = text;
             list.appendChild(m);
             scrollBottom();
+            saveLocal();
         }
 
         function renderQuote(q){
@@ -97,9 +110,12 @@
         function addBot(text, system){
             const m = document.createElement('div');
             m.className = 'ai-agent-msg bot' + (system ? ' system' : '');
+            m.dataset.role = 'assistant';
+            m.dataset.ts = Date.now();
             m.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> ' + text;
             list.appendChild(m);
             scrollBottom();
+            saveLocal();
         }
 
         function renderConversation(conv){
@@ -113,6 +129,14 @@
                 }
             });
         }
+
+        try{
+            const cached = localStorage.getItem(storeKey);
+            if(cached){
+                convo = JSON.parse(cached) || [];
+                renderConversation(convo);
+            }
+        }catch(e){}
 
         function clearExpiry(){ if(expiryTimer){ clearTimeout(expiryTimer); expiryTimer = null; } }
         function startExpiry(){
@@ -134,11 +158,12 @@
             btn.addEventListener('click', function(){
                 finished = false;
                 convo = [];
-                if(config.ajax){
+                localStorage.removeItem(storeKey);
+                if(ajax){
                     const fd = new FormData();
                     fd.append('action','ai_agent_end_session');
                     fd.append('nonce', config.nonce || '');
-                    fetch(config.ajax, {method:'POST', body:fd, credentials:'same-origin'});
+                    fetch(ajax, {method:'POST', body:fd, credentials:'same-origin'});
                 }
                 wrap.remove();
             });
@@ -150,17 +175,19 @@
         }
 
         async function hydrate(){
-            if(!config.ajax){ return; }
+            if(!ajax){ return; }
             const fd = new FormData();
             fd.append('action','ai_agent_get_session');
             fd.append('nonce', config.nonce || '');
             try{
-                const res = await fetch(config.ajax, {method:'POST', body:fd, credentials:'same-origin'});
+                const res = await fetch(ajax, {method:'POST', body:fd, credentials:'same-origin'});
                 const json = await res.json();
                 const data = json && json.data ? json.data : {};
                 if(Array.isArray(data.conversation)){
                     convo = data.conversation;
+                    list.innerHTML = '';
                     renderConversation(convo);
+                    saveLocal();
                 }
                 if(data.status === 'active'){
                     startExpiry();
@@ -171,7 +198,7 @@
         }
 
         async function sendMsg(msg){
-            if(finished){ finished = false; convo = []; }
+            if(finished){ finished = false; convo = []; localStorage.removeItem(storeKey); }
             startExpiry();
             const typingEl = showTyping();
             ta.disabled = true;
@@ -179,7 +206,7 @@
             let textNode;
             try{
                 const full = await window.WPAI.sendChatRequest({
-                    url: config.ajax + '?action=ai_agent_chat',
+                    url: ajax + '?action=ai_agent_chat',
                     headers: { 'Content-Type': 'application/json' },
                     body: { visitor: visitor, message: msg, conversation: convo },
                     onToken: function(tok){
@@ -208,6 +235,7 @@
                         if(textNode){ textNode.textContent = ''; }
                     }
                 }catch(e){}
+                saveLocal();
             } catch(e){
                 typingEl.remove();
                 const err = document.createElement('div');
