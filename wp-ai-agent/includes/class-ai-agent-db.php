@@ -59,37 +59,53 @@ class Ai_Agent_DB {
         return (int) $wpdb->insert_id;
     }
 
-    public static function get_active_by_vid_or_ip( $visitor_id, $ip_hash, $expiry_minutes ) {
+    public static function get_active_by_vid_or_ip( $visitor_id, $ip_hash ) {
         global $wpdb;
         $table = self::table_name();
-        $now   = current_time( 'timestamp', true );
         $row   = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $table WHERE visitor_id = %s AND ended = 0 ORDER BY id DESC LIMIT 1", $visitor_id ) );
         if ( ! $row ) {
             $row = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $table WHERE ip_hash = %s AND ended = 0 ORDER BY id DESC LIMIT 1", $ip_hash ) );
-            if ( ! $row ) {
-                return null;
-            }
         }
-        $expired = false;
-        if ( $row->last_activity && ( $now - strtotime( $row->last_activity ) ) > (int) $expiry_minutes * 60 ) {
-            $expired = true;
-        }
-        return (object) [ 'row' => $row, 'expired' => $expired ];
+        return $row ? $row : null;
     }
 
-    public static function end_chat( $id, $conversation = null ) {
+    public static function touch_activity( $id ) {
         global $wpdb;
-        $table  = self::table_name();
-        $data   = [
-            'ended'         => 1,
-            'last_activity' => current_time( 'mysql', true ),
-        ];
-        $format = [ '%d', '%s' ];
-        if ( null !== $conversation ) {
-            $data['conversation'] = wp_json_encode( $conversation );
-            $format[] = '%s';
+        $table = self::table_name();
+        $wpdb->update( $table, [ 'last_activity' => current_time( 'mysql', true ) ], [ 'id' => (int) $id ], [ '%s' ], [ '%d' ] );
+    }
+
+    public static function mark_finished_once( $id, $sys_msg ) {
+        global $wpdb;
+        $table = self::table_name();
+        $row   = $wpdb->get_row( $wpdb->prepare( "SELECT conversation, ended FROM $table WHERE id = %d", $id ) );
+        if ( ! $row ) {
+            return;
         }
-        $wpdb->update( $table, $data, [ 'id' => (int) $id ], $format, [ '%d' ] );
+        $conv = json_decode( (string) $row->conversation, true ) ?: [];
+        foreach ( $conv as $m ) {
+            if ( ! empty( $m['system'] ) && $m['content'] === $sys_msg ) {
+                $wpdb->update( $table, [ 'ended' => 1, 'last_activity' => current_time( 'mysql', true ) ], [ 'id' => (int) $id ], [ '%d','%s' ], [ '%d' ] );
+                return;
+            }
+        }
+        $conv[] = [
+            'role'   => 'assistant',
+            'content'=> $sys_msg,
+            'ts'     => time(),
+            'system' => true,
+        ];
+        $wpdb->update(
+            $table,
+            [
+                'conversation'  => wp_json_encode( $conv ),
+                'ended'         => 1,
+                'last_activity' => current_time( 'mysql', true ),
+            ],
+            [ 'id' => (int) $id ],
+            [ '%s','%d','%s' ],
+            [ '%d' ]
+        );
     }
 
     public static function get_chats() {

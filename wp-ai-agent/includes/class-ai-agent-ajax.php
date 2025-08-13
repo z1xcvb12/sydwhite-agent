@@ -37,17 +37,12 @@ class Ai_Agent_AJAX {
         }
         $this->rate_limit( $visitor );
         $settings = wp_ai_agent_get_settings();
-        $expiry   = isset( $settings['chat_expiry_minutes'] ) ? (int) $settings['chat_expiry_minutes'] : 20;
         $ip_hash  = ai_agent_ip_hash();
-        $found    = Ai_Agent_DB::get_active_by_vid_or_ip( $visitor, $ip_hash, $expiry );
+        $found    = Ai_Agent_DB::get_active_by_vid_or_ip( $visitor, $ip_hash );
         $chat_id  = null;
-        if ( $found && ! $found->expired ) {
-            $chat_id     = (int) $found->row->id;
-            $conversation = json_decode( (string) $found->row->conversation, true ) ?: [];
-        } elseif ( $found && $found->expired ) {
-            $prev = json_decode( (string) $found->row->conversation, true ) ?: [];
-            Ai_Agent_DB::end_chat( (int) $found->row->id, $prev );
-            $conversation = [];
+        if ( $found ) {
+            $chat_id     = (int) $found->id;
+            $conversation = json_decode( (string) $found->conversation, true ) ?: [];
         }
         $handbook = Ai_Agent_Handbooks::get_prompt();
         $system   = $handbook;
@@ -64,54 +59,47 @@ class Ai_Agent_AJAX {
         header( 'Cache-Control: no-cache' );
         header( 'X-Accel-Buffering: no' );
 
-        $response      = $this->stream_api( $settings, $messages );
+        ignore_user_abort( true );
+        @set_time_limit( 0 );
+
         $conversation[] = [ 'role' => 'user', 'content' => $message, 'ts' => time() ];
-        $conversation[] = [ 'role' => 'assistant', 'content' => $response, 'ts' => time() ];
-        Ai_Agent_DB::save_chat( $visitor, $ip_hash, $conversation, $chat_id );
+        $chat_id = Ai_Agent_DB::save_chat( $visitor, $ip_hash, $conversation, $chat_id );
+
+        $assistant = $this->stream_api( $settings, $messages );
+        if ( $assistant !== '' ) {
+            $conversation[] = [ 'role' => 'assistant', 'content' => $assistant, 'ts' => time() ];
+            Ai_Agent_DB::save_chat( $visitor, $ip_hash, $conversation, $chat_id );
+        }
         wp_die();
     }
 
     public function get_session() {
         check_ajax_referer( 'wpai_agent', 'nonce' );
-        $settings = wp_ai_agent_get_settings();
-        $expiry   = isset( $settings['chat_expiry_minutes'] ) ? (int) $settings['chat_expiry_minutes'] : 20;
-        $visitor  = isset( $_COOKIE['ai_agent_vid'] ) ? sanitize_text_field( wp_unslash( $_COOKIE['ai_agent_vid'] ) ) : '';
-        $ip_hash  = ai_agent_ip_hash();
-        $found    = Ai_Agent_DB::get_active_by_vid_or_ip( $visitor, $ip_hash, $expiry );
-        if ( ! $found ) {
-            wp_send_json_success( [ 'status' => 'none' ] );
+        $visitor = isset( $_COOKIE['ai_agent_vid'] ) ? sanitize_text_field( wp_unslash( $_COOKIE['ai_agent_vid'] ) ) : '';
+        $ip_hash = ai_agent_ip_hash();
+        $row     = Ai_Agent_DB::get_active_by_vid_or_ip( $visitor, $ip_hash );
+        if ( $row ) {
+            $conv = json_decode( (string) $row->conversation, true ) ?: [];
+            Ai_Agent_DB::touch_activity( (int) $row->id );
+            wp_send_json_success( [ 'status' => 'active', 'conversation' => $conv ] );
         }
-        $row  = $found->row;
-        $conv = json_decode( (string) $row->conversation, true ) ?: [];
-        if ( $found->expired && ! (int) $row->ended ) {
-            $conv[] = [
-                'role'   => 'assistant',
-                'content'=> __( 'This chat has finished due to inactivity. Click “Start new chat” to continue.', 'wp-ai-agent' ),
-                'ts'     => time(),
-                'system' => true,
-            ];
-            Ai_Agent_DB::end_chat( (int) $row->id, $conv );
+        global $wpdb;
+        $table = Ai_Agent_DB::table_name();
+        $ended = $wpdb->get_row( $wpdb->prepare( "SELECT * FROM $table WHERE (visitor_id = %s OR ip_hash = %s) ORDER BY id DESC LIMIT 1", $visitor, $ip_hash ) );
+        if ( $ended && (int) $ended->ended ) {
+            $conv = json_decode( (string) $ended->conversation, true ) ?: [];
             wp_send_json_success( [ 'status' => 'expired', 'conversation' => $conv ] );
         }
-        wp_send_json_success( [ 'status' => 'active', 'conversation' => $conv ] );
+        wp_send_json_success( [ 'status' => 'none' ] );
     }
 
     public function end_session() {
         check_ajax_referer( 'wpai_agent', 'nonce' );
         $visitor = isset( $_COOKIE['ai_agent_vid'] ) ? sanitize_text_field( wp_unslash( $_COOKIE['ai_agent_vid'] ) ) : '';
-        if ( ! $visitor ) {
-            wp_send_json_success();
-        }
-        $row = Ai_Agent_DB::get_active_by_vid_or_ip( $visitor, ai_agent_ip_hash(), PHP_INT_MAX );
-        if ( $row && $row->row && ! (int) $row->row->ended ) {
-            $conv = json_decode( (string) $row->row->conversation, true ) ?: [];
-            $conv[] = [
-                'role'   => 'assistant',
-                'content'=> __( 'This chat has finished due to inactivity. Click “Start new chat” to continue.', 'wp-ai-agent' ),
-                'ts'     => time(),
-                'system' => true,
-            ];
-            Ai_Agent_DB::end_chat( (int) $row->row->id, $conv );
+        $ip_hash = ai_agent_ip_hash();
+        $row     = Ai_Agent_DB::get_active_by_vid_or_ip( $visitor, $ip_hash );
+        if ( $row ) {
+            Ai_Agent_DB::mark_finished_once( (int) $row->id, __( 'This chat has finished due to inactivity. Click “Start new chat” to continue.', 'wp-ai-agent' ) );
         }
         wp_send_json_success();
     }
@@ -128,39 +116,44 @@ class Ai_Agent_AJAX {
             'Content-Type: application/json',
             'Authorization: Bearer ' . ( $alt ? $alt : $open ),
         ];
+        $max_tokens = isset( $settings['max_tokens'] ) ? max( 800, (int) $settings['max_tokens'] ) : 800;
         $body = [
-            'model'    => $alt ? $model : $model,
-            'messages' => $messages,
-            'stream'   => true,
+            'model'       => $alt ? $model : $model,
+            'messages'    => $messages,
+            'stream'      => true,
+            'max_tokens'  => $max_tokens,
+            'temperature' => 0.7,
         ];
         $ch = curl_init( $url );
         curl_setopt( $ch, CURLOPT_HTTPHEADER, $headers );
         curl_setopt( $ch, CURLOPT_POST, true );
         curl_setopt( $ch, CURLOPT_POSTFIELDS, wp_json_encode( $body ) );
         curl_setopt( $ch, CURLOPT_RETURNTRANSFER, false );
-        $buffer = '';
-        curl_setopt( $ch, CURLOPT_WRITEFUNCTION, function( $ch, $data ) use ( &$buffer ) {
-            $buffer .= $data;
+        $assistant_buffer = '';
+        $line_buffer = '';
+        curl_setopt( $ch, CURLOPT_WRITEFUNCTION, function( $ch, $data ) use ( &$assistant_buffer, &$line_buffer ) {
             echo $data;
             @ob_flush();
             flush();
+            $line_buffer .= $data;
+            while ( false !== ( $pos = strpos( $line_buffer, "\n" ) ) ) {
+                $line = substr( $line_buffer, 0, $pos );
+                $line_buffer = substr( $line_buffer, $pos + 1 );
+                if ( 0 === strpos( $line, 'data:' ) ) {
+                    $payload = trim( substr( $line, 5 ) );
+                    if ( '[DONE]' === $payload ) {
+                        continue;
+                    }
+                    $json = json_decode( $payload, true );
+                    if ( isset( $json['choices'][0]['delta']['content'] ) ) {
+                        $assistant_buffer .= $json['choices'][0]['delta']['content'];
+                    }
+                }
+            }
             return strlen( $data );
         } );
         curl_exec( $ch );
         curl_close( $ch );
-        $text = '';
-        foreach ( explode( "\\n", $buffer ) as $line ) {
-            if ( 0 === strpos( $line, 'data:' ) ) {
-                $payload = trim( substr( $line, 5 ) );
-                if ( '[DONE]' === $payload ) {
-                    break;
-                }
-                $json = json_decode( $payload, true );
-                if ( isset( $json['choices'][0]['delta']['content'] ) ) {
-                    $text .= $json['choices'][0]['delta']['content'];
-                }
-            }
-        }
-        return $text;
+        return $assistant_buffer;
     }
 }
