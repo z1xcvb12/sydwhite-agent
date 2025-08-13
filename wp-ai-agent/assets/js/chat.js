@@ -59,17 +59,14 @@
         const list = win.querySelector(listSelector);
         let convo = [];
 
-        function saveLocal(){
+        function persistConversation(){
             const arr = [];
             list.querySelectorAll('.ai-agent-msg').forEach(el => {
-                let text = el.textContent;
-                const prefix = agentName + ':';
-                if((el.dataset.role||'') === 'assistant' && text.startsWith(prefix)){
-                    text = text.slice(prefix.length).trim();
-                }
+                const txt = (el.querySelector('.wpai-msg')?.textContent || '').trim();
+                if(!txt){ return; }
                 arr.push({
                     role: el.dataset.role || (el.classList.contains('user') ? 'user' : 'assistant'),
-                    content: text,
+                    content: txt,
                     ts: parseInt(el.dataset.ts || Date.now(),10),
                     system: el.classList.contains('system')
                 });
@@ -79,15 +76,19 @@
 
         function scrollBottom(){ list.scrollTop = list.scrollHeight; }
 
-        function addUser(text){
+        function addUser(text, ts){
             const m = document.createElement('div');
             m.className = 'ai-agent-msg user';
             m.dataset.role = 'user';
-            m.dataset.ts = Date.now();
-            m.textContent = text;
+            m.dataset.ts = ts || Date.now();
+            const span = document.createElement('span');
+            span.className = 'wpai-msg';
+            span.textContent = text;
+            m.appendChild(span);
             list.appendChild(m);
             scrollBottom();
-            saveLocal();
+            persistConversation();
+            return m;
         }
 
         function renderQuote(q){
@@ -101,31 +102,35 @@
         function showTyping(){
             const m = document.createElement('div');
             m.className = 'ai-agent-msg bot typing';
-            m.innerHTML = '<span class="ai-agent-name">'+agentName+'</span> is typing <span class="typing-dots"><span></span><span></span><span></span></span>';
+            m.dataset.role = 'assistant';
+            m.dataset.ts = Date.now();
+            m.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> <span class="wpai-msg"><span class="typing-dots"><span></span><span></span><span></span></span></span>';
             list.appendChild(m);
             scrollBottom();
             return m;
         }
 
-        function addBot(text, system){
+        function addBot(text, system, ts){
             const m = document.createElement('div');
             m.className = 'ai-agent-msg bot' + (system ? ' system' : '');
             m.dataset.role = 'assistant';
-            m.dataset.ts = Date.now();
-            m.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> ' + text;
+            m.dataset.ts = ts || Date.now();
+            m.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> <span class="wpai-msg"></span>';
+            m.querySelector('.wpai-msg').textContent = text;
             list.appendChild(m);
             scrollBottom();
-            saveLocal();
+            persistConversation();
         }
 
         function renderConversation(conv){
             conv.forEach(function(m){
+                const text = m.content || m.message || m.text || '';
                 if(m.role === 'user'){
-                    addUser(m.content);
+                    addUser(text, m.ts);
                 } else if(m.system){
-                    addBot(m.content, true);
+                    addBot(text, true, m.ts);
                 } else {
-                    addBot(m.content);
+                    addBot(text, false, m.ts);
                 }
             });
         }
@@ -187,7 +192,7 @@
                     convo = data.conversation;
                     list.innerHTML = '';
                     renderConversation(convo);
-                    saveLocal();
+                    persistConversation();
                 }
                 if(data.status === 'active'){
                     startExpiry();
@@ -197,50 +202,51 @@
             } catch(e){}
         }
 
-        async function sendMsg(msg){
+        async function sendMsg(msg, userTs){
             if(finished){ finished = false; convo = []; localStorage.removeItem(storeKey); }
             startExpiry();
             const typingEl = showTyping();
             ta.disabled = true;
             send.disabled = true;
-            let textNode;
+            let msgSpan;
             try{
                 const full = await window.WPAI.sendChatRequest({
                     url: ajax + '?action=ai_agent_chat',
                     headers: { 'Content-Type': 'application/json' },
                     body: { visitor: visitor, message: msg, conversation: convo },
                     onToken: function(tok){
-                        if(!textNode){
+                        if(!msgSpan){
                             typingEl.classList.remove('typing');
-                            typingEl.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> ';
-                            textNode = document.createTextNode(tok);
-                            typingEl.appendChild(textNode);
-                        } else {
-                            textNode.textContent += tok;
+                            typingEl.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> <span class="wpai-msg"></span>';
+                            msgSpan = typingEl.querySelector('.wpai-msg');
                         }
+                        msgSpan.textContent += tok;
                         scrollBottom();
                     },
                     onDone: function(){ startExpiry(); }
                 });
-                convo.push({role:'user',content:msg});
-                convo.push({role:'assistant',content:full});
-                if(!textNode){
+                convo.push({role:'user',content:msg,ts:userTs});
+                if(full){
+                    convo.push({role:'assistant',content:full,ts:parseInt(typingEl.dataset.ts,10)});
+                }
+                if(!msgSpan){
                     typingEl.classList.remove('typing');
-                    typingEl.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> '+full;
+                    typingEl.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> <span class="wpai-msg"></span>';
+                    typingEl.querySelector('.wpai-msg').textContent = full;
                 }
                 try{
                     const q = JSON.parse(full);
                     if(q && q.items){
                         renderQuote(q);
-                        if(textNode){ textNode.textContent = ''; }
+                        if(msgSpan){ msgSpan.textContent = ''; } else { typingEl.querySelector('.wpai-msg').textContent = ''; }
                     }
                 }catch(e){}
-                saveLocal();
+                persistConversation();
             } catch(e){
                 typingEl.remove();
                 const err = document.createElement('div');
                 err.className = 'ai-agent-msg bot';
-                err.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> Error';
+                err.innerHTML = '<span class="ai-agent-name">'+agentName+':</span> <span class="wpai-msg">Error</span>';
                 list.appendChild(err);
                 scrollBottom();
             } finally {
@@ -254,8 +260,8 @@
             const msg = ta.value.trim();
             if(!msg){ return; }
             ta.value = '';
-            addUser(msg);
-            sendMsg(msg);
+            const el = addUser(msg);
+            sendMsg(msg, parseInt(el.dataset.ts,10));
         });
 
         if(config.enterSend){
