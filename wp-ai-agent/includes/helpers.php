@@ -8,8 +8,8 @@ if ( ! function_exists( 'wp_ai_agent_get_settings' ) ) {
         $defaults = [
             'openai_key' => '',
             'alt_key'    => '',
-            'base_url'   => 'https://api.openai.com/v1/chat/completions',
-            'model'      => 'gpt-4o-mini',
+            'base_url'   => 'https://api.deepseek.com/chat/completions',
+            'model'      => 'deepseek-chat', // or 'deepseek-reasoner'
             'quote_rules'=> '',
             'chat_expiry_minutes' => 20,
         ];

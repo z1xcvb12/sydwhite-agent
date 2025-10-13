@@ -15,9 +15,8 @@ $settings = wp_ai_agent_get_settings();
 <tr>
 <th scope="row"><label for="model"><?php _e( 'Model', 'wp-ai-agent' ); ?></label></th>
 <td><select id="model" name="wp_ai_agent_settings[model]">
-<option value="gpt-4o-mini" <?php selected( $settings['model'], 'gpt-4o-mini' ); ?>>gpt-4o-mini</option>
-<option value="deepseek-r1" <?php selected( $settings['model'], 'deepseek-r1' ); ?>>deepseek-r1</option>
-<option value="deepseek-v3" <?php selected( $settings['model'], 'deepseek-v3' ); ?>>deepseek-v3</option>
+    <option value="deepseek-chat" <?php selected( $settings['model'], 'deepseek-chat' ); ?>>deepseek-chat</option>
+    <option value="deepseek-reasoner" <?php selected( $settings['model'], 'deepseek-reasoner' ); ?>>deepseek-reasoner</option>
 </select></td>
 </tr>
 <tr>

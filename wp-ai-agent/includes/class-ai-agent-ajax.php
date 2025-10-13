@@ -107,8 +107,9 @@ class Ai_Agent_AJAX {
     protected function stream_api( $settings, $messages ) {
         $alt = wp_ai_agent_decrypt( $settings['alt_key'] );
         $open = wp_ai_agent_decrypt( $settings['openai_key'] );
-        $model = $settings['model'] ?: 'gpt-4o-mini';
-        $url = $alt ? 'https://api.probex.top/v1/chat/completions' : 'https://api.openai.com/v1/chat/completions';
+        $model = $settings['model'] ?: 'deepseek-chat';
+        $url = 'https://api.deepseek.com/chat/completions';
+
         if ( ! empty( $settings['base_url'] ) && ! $alt ) {
             $url = $settings['base_url'];
         }
