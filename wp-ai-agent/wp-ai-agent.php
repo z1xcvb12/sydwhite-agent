@@ -2,8 +2,8 @@
 /**
  * Plugin Name: AI Agent (Chat + Quotes)
  * Description: WhatsApp-style AI chat with quote generation.
- * Version: 1.0.0
- * Author: AI Agent Bot
+ * Version: 1.0.7
+ * Author: Syd White
  * Text Domain: wp-ai-agent
  * Domain Path: /languages
  */
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 // Define constants.
-define( 'WP_AI_AGENT_VERSION', '1.0.0' );
+define( 'WP_AI_AGENT_VERSION', '1.0.7' );
 define( 'WP_AI_AGENT_DIR', plugin_dir_path( __FILE__ ) );
 define( 'WP_AI_AGENT_URL', plugin_dir_url( __FILE__ ) );
 

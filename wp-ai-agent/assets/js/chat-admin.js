@@ -20,17 +20,18 @@
     }
 
     function getAgentName(){
+        const list = (window.WPAI_CONFIG && window.WPAI_CONFIG.agentNames) ? window.WPAI_CONFIG.agentNames : [];
+        // Always prefer current config; if you still want a tiny cache, key it per list-length
+        const key = 'wpAiAgentName_len_' + list.length;
         try {
-            if(window.sessionStorage){
-                let n = sessionStorage.getItem('wpAiAgentName');
-                if(n){ return n; }
-                const list = config.agentNames || [];
+            if (window.sessionStorage) {
+                let n = sessionStorage.getItem(key);
+                if (n) return n;
                 n = list[Math.floor(Math.random()*list.length)] || '';
-                sessionStorage.setItem('wpAiAgentName', n);
+                sessionStorage.setItem(key, n);
                 return n;
             }
         } catch(e){}
-        const list = config.agentNames || [];
         return list[Math.floor(Math.random()*list.length)] || '';
     }
 
