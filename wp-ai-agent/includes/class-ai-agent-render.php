@@ -31,6 +31,10 @@ class Ai_Agent_Render {
                 'startNew' => __( 'Start new chat', 'wp-ai-agent' ),
             ],
             'agentProfiles' => wp_ai_agent_get_agent_profiles(),
+            'agentNames'    => array_filter( array_map(
+                function( $p ){ return is_array( $p ) ? ( $p['name'] ?? '' ) : ''; },
+                wp_ai_agent_get_agent_profiles()
+            )),
         ];
     }
 
@@ -60,6 +64,10 @@ class Ai_Agent_Render {
                     'startNew' => __( 'Start new chat', 'wp-ai-agent' ),
                 ],
                 'agentProfiles' => wp_ai_agent_get_agent_profiles(),
+                'agentNames'    => array_filter( array_map(
+                    function( $p ){ return is_array( $p ) ? ( $p['name'] ?? '' ) : ''; },
+                    wp_ai_agent_get_agent_profiles()
+                )),
             ]
         );
         wp_enqueue_script( 'wp-ai-agent-frontend' );
