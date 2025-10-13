@@ -55,6 +55,7 @@ class Ai_Agent_Admin {
             'handbooks' => __( 'AI Handbook', 'wp-ai-agent' ),
             'history'   => __( 'Chat History', 'wp-ai-agent' ),
             'test'      => __( 'Test Chat', 'wp-ai-agent' ),
+            'agents'    => __( 'Agents', 'wp-ai-agent' ),
         ];
         foreach ( $tabs as $id => $label ) {
             $class = ( $id === $tab ) ? ' nav-tab-active' : '';
@@ -70,6 +71,9 @@ class Ai_Agent_Admin {
                 break;
             case 'test':
                 include WP_AI_AGENT_DIR . 'templates/admin-test-chat.php';
+                break;
+            case 'agents':
+                include WP_AI_AGENT_DIR . 'templates/admin-agents.php';
                 break;
             case 'api':
             default:

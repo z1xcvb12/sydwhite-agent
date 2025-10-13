@@ -30,6 +30,8 @@
   border:1px solid #ccc;
   border-radius:16px;
   overflow:hidden;
+  background-size: cover;
+  background-position: center center;
 }
 
 @supports not (height: 100dvh) {
@@ -62,6 +64,9 @@
   background:#075e54;
   color:#fff;
   padding:10px;
+  /* if background is bright, this keeps the title readable */
+  background: rgba(0,0,0,0.65);
+  color: #fff;
 }
 
 [data-wpai-chat-root] .ai-agent-messages {

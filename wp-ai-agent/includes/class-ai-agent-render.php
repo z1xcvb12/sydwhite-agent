@@ -30,6 +30,7 @@ class Ai_Agent_Render {
                 'finished' => __( 'This chat has finished due to inactivity. Click “Start new chat” to continue.', 'wp-ai-agent' ),
                 'startNew' => __( 'Start new chat', 'wp-ai-agent' ),
             ],
+            'agentProfiles' => wp_ai_agent_get_agent_profiles(),
         ];
     }
 
