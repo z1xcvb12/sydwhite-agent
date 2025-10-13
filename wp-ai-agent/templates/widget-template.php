@@ -52,6 +52,15 @@ class Ai_Agent_Elementor_Widget extends Widget_Base {
         if ( 'yes' !== $settings['show_button'] ) {
             return;
         }
+
+        // Added chat header placeholder with agent name hook
+        echo '<div class="wpai-chat-header">';
+        echo '  <div class="wpai-agent">';
+        echo '    <strong data-wpai-agent-name>' . esc_html__( 'Agent', 'wp-ai-agent' ) . '</strong>';
+        echo '  </div>';
+        echo '  <!-- ...rest of your header buttons -->';
+        echo '</div>';
+
         echo '<div class="ai-agent-el" data-position="' . esc_attr( $settings['position'] ) . '" data-color="' . esc_attr( $settings['color'] ) . '">' . esc_html( $settings['label'] ) . '</div>';
     }
 }

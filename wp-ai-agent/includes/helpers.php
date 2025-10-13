@@ -12,6 +12,7 @@ if ( ! function_exists( 'wp_ai_agent_get_settings' ) ) {
             'model'      => 'deepseek-chat', // or 'deepseek-reasoner'
             'quote_rules'=> '',
             'chat_expiry_minutes' => 20,
+            'agent_profiles' => "Jack Wilson | \nOlivia Nguyen | \nLiam O'Connor | \nChloe Smith | \nNoah Patel | ",
         ];
         $opts = get_option( 'wp_ai_agent_settings', [] );
         return wp_parse_args( $opts, $defaults );
@@ -94,3 +95,34 @@ if ( ! function_exists( 'ai_agent_ip_hash' ) ) {
 }
 
 add_action( 'init', 'ai_agent_ensure_vid_cookie', 0 );
+
+// 2) PARSE A MULTI-LINE TEXT INTO [ ['name'=>'...','bg'=>'...'], ... ]
+if ( ! function_exists( 'wp_ai_agent_parse_agent_profiles' ) ) {
+    function wp_ai_agent_parse_agent_profiles( $raw ) {
+        $out = [];
+        $raw = (string) $raw;
+        foreach ( preg_split( "/\r\n|\n|\r/", $raw ) as $line ) {
+            $line = trim( $line );
+            if ( $line === '' ) continue;
+            // Format: Name | imageURL (imageURL optional)
+            $parts = array_map( 'trim', explode( '|', $line, 2 ) );
+            $name  = sanitize_text_field( $parts[0] ?? '' );
+            $bg    = isset( $parts[1] ) ? esc_url_raw( $parts[1] ) : '';
+            if ( $name !== '' ) {
+                $out[] = [ 'name' => $name, 'bg' => $bg ];
+            }
+        }
+        // Fallback if empty
+        if ( empty( $out ) ) {
+            $out[] = [ 'name' => __( 'Agent', 'wp-ai-agent' ), 'bg' => '' ];
+        }
+        return $out;
+    }
+}
+
+if ( ! function_exists( 'wp_ai_agent_get_agent_profiles' ) ) {
+    function wp_ai_agent_get_agent_profiles() {
+        $s = wp_ai_agent_get_settings();
+        return wp_ai_agent_parse_agent_profiles( $s['agent_profiles'] ?? '' );
+    }
+}

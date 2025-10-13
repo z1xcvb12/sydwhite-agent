@@ -19,13 +19,6 @@ class Ai_Agent_Render {
             'assets'     => WP_AI_AGENT_URL . 'assets',
             'enterSend'  => ! empty( $settings['enter_send'] ),
             'sound'      => ! empty( $settings['sound'] ),
-            'agentNames' => [
-                'Jack Wilson',
-                'Olivia Nguyen',
-                'Liam O\'Connor',
-                'Chloe Smith',
-                'Noah Patel',
-            ],
             'debug'      => ! empty( $settings['debug'] ),
             'selectors'  => [
                 'chatRoot'    => '[data-wpai-chat-root]',
@@ -45,7 +38,29 @@ class Ai_Agent_Render {
 
         wp_register_script( 'wp-ai-agent-transport', WP_AI_AGENT_URL . 'assets/js/chat-transport.js', [], WP_AI_AGENT_VERSION, true );
         wp_register_script( 'wp-ai-agent-frontend', WP_AI_AGENT_URL . 'assets/js/chat.js', [ 'wp-ai-agent-transport' ], WP_AI_AGENT_VERSION, true );
-        wp_localize_script( 'wp-ai-agent-frontend', 'WPAI_CONFIG', $this->config() );
+        wp_localize_script(
+            'wp-ai-agent-frontend',
+            'WPAI_AGENT',
+            [
+                'ajaxUrl'    => admin_url( 'admin-ajax.php' ),
+                'ajax'       => admin_url( 'admin-ajax.php' ),
+                'assets'     => WP_AI_AGENT_URL . 'assets',
+                'enterSend'  => ! empty( $settings['enter_send'] ),
+                'sound'      => ! empty( $settings['sound'] ),
+                'debug'      => ! empty( $settings['debug'] ),
+                'selectors'  => [
+                    'chatRoot'    => '[data-wpai-chat-root]',
+                    'messageList' => '[data-wpai-message-list]',
+                ],
+                'expiry'     => isset( $settings['chat_expiry_minutes'] ) ? (int) $settings['chat_expiry_minutes'] : 20,
+                'nonce'      => wp_create_nonce( 'wpai_agent' ),
+                'i18n'       => [
+                    'finished' => __( 'This chat has finished due to inactivity. Click “Start new chat” to continue.', 'wp-ai-agent' ),
+                    'startNew' => __( 'Start new chat', 'wp-ai-agent' ),
+                ],
+                'agentProfiles' => wp_ai_agent_get_agent_profiles(),
+            ]
+        );
         wp_enqueue_script( 'wp-ai-agent-frontend' );
     }
 

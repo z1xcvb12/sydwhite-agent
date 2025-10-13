@@ -1,5 +1,33 @@
 (function(){
     const config = window.WPAI_CONFIG || {};
+
+    // Insert: pick an active agent from localized WPAI_AGENT profiles (falls back to "Agent")
+    (function () {
+      const CFG = (typeof window.WPAI_AGENT === 'object' && window.WPAI_AGENT) ? window.WPAI_AGENT : {};
+      const profiles = Array.isArray(CFG.agentProfiles) ? CFG.agentProfiles : [];
+      const pickRandom = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+      // Choose agent for this session
+      const activeAgent = profiles.length ? pickRandom(profiles) : { name: 'Agent', bg: '' };
+
+      // 1) Put agent name in header (requires markup hook)
+      const nameEl = document.querySelector('[data-wpai-agent-name]');
+      if (nameEl) nameEl.textContent = activeAgent.name;
+
+      // 2) Apply background image to chat root (optional)
+      const rootSel = CFG.selectors && CFG.selectors.chatRoot ? CFG.selectors.chatRoot : '[data-wpai-chat-root]';
+      const rootEl = document.querySelector(rootSel);
+      if (rootEl && activeAgent.bg) {
+        rootEl.style.backgroundImage = `url("${activeAgent.bg}")`;
+        rootEl.style.backgroundSize = 'cover';
+        rootEl.style.backgroundPosition = 'center center';
+      }
+
+      // expose the chosen agent for later use and keep legacy config.agentNames for compatibility
+      window.WPAI_ACTIVE_AGENT = activeAgent;
+      config.agentNames = [ activeAgent.name ];
+    })();
+
     const selectors = config.selectors || {};
     const rootSelector = selectors.chatRoot || '[data-wpai-chat-root]';
     const listSelector = selectors.messageList || '[data-wpai-message-list]';

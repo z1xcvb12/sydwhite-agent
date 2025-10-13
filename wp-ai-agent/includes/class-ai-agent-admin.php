@@ -27,13 +27,18 @@ class Ai_Agent_Admin {
 
     public function sanitize_settings( $input ) {
         $out = [];
-        $out['openai_key'] = wp_ai_agent_encrypt( sanitize_text_field( $input['openai_key'] ?? '' ) );
-        $out['alt_key']    = wp_ai_agent_encrypt( sanitize_text_field( $input['alt_key'] ?? '' ) );
-        $out['base_url']   = esc_url_raw( $input['base_url'] ?? '' );
-        $out['model']      = sanitize_text_field( $input['model'] ?? '' );
-        $out['quote_rules']= wp_kses_post( $input['quote_rules'] ?? '' );
+        $out['openai_key'] = isset( $input['openai_key'] ) ? wp_ai_agent_encrypt( sanitize_text_field( $input['openai_key'] ) ) : '';
+        $out['alt_key']    = isset( $input['alt_key'] ) ? wp_ai_agent_encrypt( sanitize_text_field( $input['alt_key'] ) ) : '';
+        $out['base_url']   = isset( $input['base_url'] ) ? esc_url_raw( trim( $input['base_url'] ) ) : '';
+        $out['model']      = isset( $input['model'] ) ? sanitize_text_field( $input['model'] ) : '';
+        $out['quote_rules']= isset( $input['quote_rules'] ) ? wp_kses_post( $input['quote_rules'] ) : '';
+        $out['chat_expiry_minutes'] = isset( $input['chat_expiry_minutes'] ) ? absint( $input['chat_expiry_minutes'] ) : 20;
+
+        $out['agent_profiles'] = isset( $input['agent_profiles'] )
+            ? sanitize_textarea_field( $input['agent_profiles'] )
+            : '';
+
         $out['retention']  = isset( $input['retention'] ) ? (int) $input['retention'] : 30;
-        $out['chat_expiry_minutes'] = isset( $input['chat_expiry_minutes'] ) ? max( 1, (int) $input['chat_expiry_minutes'] ) : 20;
         $out['enter_send'] = ! empty( $input['enter_send'] ) ? 1 : 0;
         $out['debug']      = ! empty( $input['debug'] ) ? 1 : 0;
         $out['sound']      = ! empty( $input['sound'] ) ? 1 : 0;

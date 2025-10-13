@@ -47,6 +47,23 @@ $settings = wp_ai_agent_get_settings();
 <td><input type="number" id="retention" name="wp_ai_agent_settings[retention]" value="<?php echo esc_attr( $settings['retention'] ?? 30 ); ?>" /></td>
 </tr>
 <tr>
+<th scope="row"><label for="agent_profiles"><?php _e( 'Agent Profiles', 'wp-ai-agent' ); ?></label></th>
+<td>
+    <textarea id="agent_profiles"
+              name="wp_ai_agent_settings[agent_profiles]"
+              rows="8"
+              class="large-text code"
+              placeholder="Name | https://example.com/bg.jpg (one per line)"><?php
+        echo esc_textarea( $settings['agent_profiles'] ?? '' );
+    ?></textarea>
+    <p class="description">
+      <?php _e( 'One per line. Format: Name | Background image URL. The URL is optional.', 'wp-ai-agent' ); ?>
+      <br /><?php _e( 'Example:', 'wp-ai-agent' ); ?>
+      <code>Chloe Smith | https://your-site.com/uploads/chloe-bg.jpg</code>
+    </p>
+  </td>
+</tr>
+<tr>
 <th scope="row"><?php _e( 'Remove uploaded handbooks on uninstall', 'wp-ai-agent' ); ?></th>
 <td><label><input type="checkbox" name="wp_ai_agent_remove_uploads" value="1" <?php checked( get_option( 'wp_ai_agent_remove_uploads' ), 1 ); ?> /> <?php _e( 'Enable', 'wp-ai-agent' ); ?></label></td>
 </tr>
